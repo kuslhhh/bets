@@ -1,0 +1,80 @@
+@import "tailwindcss";
+
+/* BEtS Consulting — centralized design tokens (index.css is source of truth) */
+:root {
+  --bets-primary: #743e95;
+  --bets-primary-dark: #5f307d;
+  --bets-text: #333333;
+  --bets-text-muted: #646979;
+  --bets-text-dark: #33373d;
+  --bets-black: #000000;
+  --bets-white: #ffffff;
+
+  /* semantic aliases — use these in components, not raw hex */
+  --color-bg: var(--bets-white);
+  --color-text: var(--bets-text);
+  --color-text-muted: var(--bets-text-muted);
+  --color-text-dark: var(--bets-text-dark);
+  --color-border: #e9e2f0; /* light purple-tinted neutral (derived from primary) */
+  --color-border-strong: #ddd3e8;
+  --ring: var(--bets-primary);
+}
+
+@theme {
+  --color-bets-primary: var(--bets-primary);
+  --color-bets-primary-dark: var(--bets-primary-dark);
+  --color-bets-text: var(--bets-text);
+  --color-bets-text-muted: var(--bets-text-muted);
+  --color-bets-text-dark: var(--bets-text-dark);
+}
+
+* {
+  border-color: var(--color-border);
+}
+
+html,
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    "Helvetica Neue",
+    Arial,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+a {
+  color: var(--bets-primary);
+  text-decoration: none;
+}
+a:hover {
+  color: var(--bets-primary-dark);
+}
+/* Ensure utility text-white (used on purple active nav/button) is not overridden by global a color */
+a.text-white,
+a[class*="text-white"] {
+  color: #fff;
+}
+a.text-white:hover,
+a[class*="text-white"]:hover {
+  color: #fff;
+}
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* Selection uses primary with sufficient contrast on white */
+::selection {
+  background: #743e9526; /* 15% primary */
+}
