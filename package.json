@@ -7,7 +7,7 @@
     "server"
   ],
   "scripts": {
-    "dev:server": "bun --hot server/index.ts",
+    "dev:server": "bun --hot server/src/index.ts",
     "dev:client": "bun --cwd client dev",
     "db:up": "docker compose up -d db",
     "db:down": "docker compose down",
@@ -15,7 +15,7 @@
     "db:migrate:create": "cd server && bun --env-file=../.env prisma migrate dev --create-only",
     "db:deploy": "cd server && bun --env-file=../.env prisma migrate deploy",
     "db:reset": "cd server && bun --env-file=../.env prisma migrate reset --force",
-    "db:seed": "bun --env-file=.env server/prisma/seed.ts",
+    "db:admin": "cd server && bun --env-file=../.env src/scripts/create-admin.ts",
     "db:studio": "cd server && bun --env-file=../.env prisma studio",
     "typecheck": "bun --cwd server typecheck",
     "test": "bun --cwd server test"
