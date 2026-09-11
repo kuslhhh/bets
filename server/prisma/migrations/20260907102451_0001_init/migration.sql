@@ -1,6 +1,8 @@
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
 -- CreateTable
 CREATE TABLE "roles" (
-    "id" TEXT NOT NULL,
+    "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
     "code" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "description" TEXT,
@@ -12,7 +14,7 @@ CREATE TABLE "roles" (
 
 -- CreateTable
 CREATE TABLE "permissions" (
-    "id" TEXT NOT NULL,
+    "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
     "code" TEXT NOT NULL,
     "description" TEXT,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -32,12 +34,10 @@ CREATE TABLE "role_permissions" (
 
 -- CreateTable
 CREATE TABLE "users" (
-    "id" TEXT NOT NULL,
+    "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
     "email" TEXT NOT NULL,
     "password_hash" TEXT NOT NULL,
     "name" TEXT NOT NULL,
-    "image" TEXT,
-    "email_verified" TIMESTAMP(3),
     "role_id" TEXT NOT NULL,
     "is_active" BOOLEAN NOT NULL DEFAULT true,
     "failed_login_attempts" INTEGER NOT NULL DEFAULT 0,
@@ -50,25 +50,8 @@ CREATE TABLE "users" (
 );
 
 -- CreateTable
-CREATE TABLE "accounts" (
-    "user_id" TEXT NOT NULL,
-    "type" TEXT NOT NULL,
-    "provider" TEXT NOT NULL,
-    "provider_account_id" TEXT NOT NULL,
-    "refresh_token" TEXT,
-    "access_token" TEXT,
-    "expires_at" INTEGER,
-    "token_type" TEXT,
-    "scope" TEXT,
-    "id_token" TEXT,
-    "session_state" TEXT,
-
-    CONSTRAINT "accounts_pkey" PRIMARY KEY ("provider","provider_account_id")
-);
-
--- CreateTable
 CREATE TABLE "sessions" (
-    "id" TEXT NOT NULL,
+    "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
     "session_token" TEXT NOT NULL,
     "user_id" TEXT NOT NULL,
     "expires" TIMESTAMP(3) NOT NULL,
@@ -87,7 +70,7 @@ CREATE TABLE "verification_tokens" (
 
 -- CreateTable
 CREATE TABLE "assessments" (
-    "id" TEXT NOT NULL,
+    "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
     "type" TEXT NOT NULL DEFAULT 'FINANCIAL_MATURITY',
     "status" TEXT NOT NULL DEFAULT 'DRAFT',
     "title" TEXT NOT NULL,
@@ -104,7 +87,7 @@ CREATE TABLE "assessments" (
 
 -- CreateTable
 CREATE TABLE "sections" (
-    "id" TEXT NOT NULL,
+    "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
     "assessment_id" TEXT NOT NULL,
     "order" INTEGER NOT NULL,
     "title" TEXT NOT NULL,
@@ -118,7 +101,7 @@ CREATE TABLE "sections" (
 
 -- CreateTable
 CREATE TABLE "categories" (
-    "id" TEXT NOT NULL,
+    "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
     "section_id" TEXT NOT NULL,
     "order" INTEGER NOT NULL,
     "name" TEXT NOT NULL,
@@ -132,7 +115,7 @@ CREATE TABLE "categories" (
 
 -- CreateTable
 CREATE TABLE "questions" (
-    "id" TEXT NOT NULL,
+    "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
     "assessment_id" TEXT NOT NULL,
     "source_number" TEXT,
     "type" TEXT NOT NULL DEFAULT 'SINGLE_SELECT',
@@ -153,7 +136,7 @@ CREATE TABLE "questions" (
 
 -- CreateTable
 CREATE TABLE "question_options" (
-    "id" TEXT NOT NULL,
+    "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
     "question_id" TEXT NOT NULL,
     "order" INTEGER NOT NULL,
     "label" TEXT NOT NULL,
@@ -167,7 +150,7 @@ CREATE TABLE "question_options" (
 
 -- CreateTable
 CREATE TABLE "assessment_assignments" (
-    "id" TEXT NOT NULL,
+    "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
     "assessment_id" TEXT NOT NULL,
     "user_id" TEXT NOT NULL,
     "status" TEXT NOT NULL DEFAULT 'ASSIGNED',
@@ -184,7 +167,7 @@ CREATE TABLE "assessment_assignments" (
 
 -- CreateTable
 CREATE TABLE "responses" (
-    "id" TEXT NOT NULL,
+    "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
     "assignment_id" TEXT NOT NULL,
     "question_id" TEXT NOT NULL,
     "question_option_id" TEXT NOT NULL,
@@ -198,7 +181,7 @@ CREATE TABLE "responses" (
 
 -- CreateTable
 CREATE TABLE "text_answers" (
-    "id" TEXT NOT NULL,
+    "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
     "assignment_id" TEXT NOT NULL,
     "question_id" TEXT NOT NULL,
     "slot_index" INTEGER NOT NULL,
@@ -211,7 +194,7 @@ CREATE TABLE "text_answers" (
 
 -- CreateTable
 CREATE TABLE "assessment_results" (
-    "id" TEXT NOT NULL,
+    "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
     "assignment_id" TEXT NOT NULL,
     "overall_self" DECIMAL(5,2),
     "overall_org" DECIMAL(5,2),
@@ -226,7 +209,7 @@ CREATE TABLE "assessment_results" (
 
 -- CreateTable
 CREATE TABLE "category_scores" (
-    "id" TEXT NOT NULL,
+    "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
     "result_id" TEXT NOT NULL,
     "category_id" TEXT NOT NULL,
     "average_score" DECIMAL(5,2) NOT NULL,
@@ -239,7 +222,7 @@ CREATE TABLE "category_scores" (
 
 -- CreateTable
 CREATE TABLE "audit_logs" (
-    "id" TEXT NOT NULL,
+    "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
     "actor_id" TEXT,
     "action" TEXT NOT NULL,
     "entity" TEXT NOT NULL,
@@ -267,9 +250,6 @@ CREATE INDEX "users_role_id_idx" ON "users"("role_id");
 
 -- CreateIndex
 CREATE INDEX "users_is_active_idx" ON "users"("is_active");
-
--- CreateIndex
-CREATE INDEX "accounts_user_id_idx" ON "accounts"("user_id");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "sessions_session_token_key" ON "sessions"("session_token");
@@ -366,9 +346,6 @@ ALTER TABLE "role_permissions" ADD CONSTRAINT "role_permissions_permission_id_fk
 
 -- AddForeignKey
 ALTER TABLE "users" ADD CONSTRAINT "users_role_id_fkey" FOREIGN KEY ("role_id") REFERENCES "roles"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "accounts" ADD CONSTRAINT "accounts_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "sessions" ADD CONSTRAINT "sessions_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;

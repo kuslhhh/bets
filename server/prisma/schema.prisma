@@ -8,7 +8,7 @@ datasource db {
 
 model Role {
 
-  id          String   @id @default(cuid())
+  id          String   @id @default(uuid())
   code        String   @unique 
   name        String
   description String?
@@ -22,7 +22,7 @@ model Role {
 }
 
 model Permission {
-  id          String   @id @default(cuid())
+  id          String   @id @default(uuid())
   code        String   @unique 
   description String?
   createdAt   DateTime @default(now()) @map("created_at")
@@ -47,12 +47,10 @@ model RolePermission {
 }
 
 model User {
-  id                  String    @id @default(cuid())
+  id                  String    @id @default(uuid())
   email               String    @unique 
   passwordHash        String    @map("password_hash") 
   name                String
-  image               String? 
-  emailVerified       DateTime? @map("email_verified")
   roleId              String    @map("role_id")
   isActive            Boolean   @default(true) @map("is_active")
   failedLoginAttempts Int       @default(0) @map("failed_login_attempts")
@@ -62,7 +60,6 @@ model User {
   updatedAt           DateTime  @updatedAt @map("updated_at")
 
   role        Role                   @relation(fields: [roleId], references: [id], onDelete: Restrict)
-  accounts    Account[]
   sessions    Session[]
   assignments AssessmentAssignment[]
   createdAssessments   Assessment[]         @relation("AssessmentCreator")
@@ -75,28 +72,8 @@ model User {
   @@map("users")
 }
 
-model Account {
-  userId            String  @map("user_id")
-  type              String
-  provider          String
-  providerAccountId String  @map("provider_account_id")
-  refresh_token     String? @db.Text
-  access_token      String? @db.Text
-  expires_at        Int?
-  token_type        String?
-  scope             String?
-  id_token          String? @db.Text
-  session_state     String?
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@id([provider, providerAccountId])
-  @@index([userId])
-  @@map("accounts")
-}
-
 model Session {
-  id           String   @id @default(cuid())
+  id           String   @id @default(uuid())
   sessionToken String   @unique @map("session_token")
   userId       String   @map("user_id")
   expires      DateTime
@@ -117,7 +94,7 @@ model VerificationToken {
 }
 
 model Assessment {
-  id            String    @id @default(cuid())
+  id            String    @id @default(uuid())
   type          String    @default("FINANCIAL_MATURITY")
   status        String    @default("DRAFT")
   title         String
@@ -140,7 +117,7 @@ model Assessment {
 }
 
 model Section {
-  id           String   @id @default(cuid())
+  id           String   @id @default(uuid())
   assessmentId String   @map("assessment_id")
   order        Int
   title        String
@@ -159,7 +136,7 @@ model Section {
 }
 
 model Category {
-  id          String   @id @default(cuid())
+  id          String   @id @default(uuid())
   sectionId   String   @map("section_id")
   order       Int
   name        String 
@@ -178,7 +155,7 @@ model Category {
 }
 
 model Question {
-  id           String   @id @default(cuid())
+  id           String   @id @default(uuid())
   assessmentId String   @map("assessment_id")
   sourceNumber String?  @map("source_number")
   type         String   @default("SINGLE_SELECT")
@@ -209,7 +186,7 @@ model Question {
 }
 
 model QuestionOption {
-  id           String   @id @default(cuid())
+  id           String   @id @default(uuid())
   questionId   String   @map("question_id")
   order        Int 
   label        String 
@@ -228,7 +205,7 @@ model QuestionOption {
 }
 
 model AssessmentAssignment {
-  id          String    @id @default(cuid())
+  id          String    @id @default(uuid())
   assessmentId String   @map("assessment_id")
   userId      String    @map("user_id")
   status      String    @default("ASSIGNED")
@@ -254,7 +231,7 @@ model AssessmentAssignment {
 }
 
 model Response {
-  id               String   @id @default(cuid())
+  id               String   @id @default(uuid())
   assignmentId     String   @map("assignment_id")
   questionId       String   @map("question_id")
   questionOptionId String   @map("question_option_id")
@@ -274,7 +251,7 @@ model Response {
 }
 
 model TextAnswer {
-  id           String   @id @default(cuid())
+  id           String   @id @default(uuid())
   assignmentId String   @map("assignment_id")
   questionId   String   @map("question_id")
   slotIndex    Int      @map("slot_index")
@@ -292,7 +269,7 @@ model TextAnswer {
 
 
 model AssessmentResult {
-  id                String    @id @default(cuid())
+  id                String    @id @default(uuid())
   assignmentId      String    @unique @map("assignment_id")
   overallSelf       Decimal?  @db.Decimal(5, 2) @map("overall_self")
   overallOrg        Decimal?  @db.Decimal(5, 2) @map("overall_org")
@@ -311,7 +288,7 @@ model AssessmentResult {
 }
 
 model CategoryScore {
-  id           String   @id @default(cuid())
+  id           String   @id @default(uuid())
   resultId     String   @map("result_id")
   categoryId   String   @map("category_id")
   averageScore Decimal  @db.Decimal(5, 2) @map("average_score")
@@ -328,7 +305,7 @@ model CategoryScore {
 
 
 model AuditLog {
-  id        String   @id @default(cuid())
+  id        String   @id @default(uuid())
   actorId   String?  @map("actor_id")
   action    String
   entity    String
