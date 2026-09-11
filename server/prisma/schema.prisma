@@ -273,6 +273,7 @@ model AssessmentResult {
   assignmentId      String    @unique @map("assignment_id")
   overallSelf       Decimal?  @db.Decimal(5, 2) @map("overall_self")
   overallOrg        Decimal?  @db.Decimal(5, 2) @map("overall_org")
+  overallCombined   Decimal?  @db.Decimal(5, 2) @map("overall_combined")
   minCategoryScore  Decimal?  @db.Decimal(5, 2) @map("min_category_score")
   maxCategoryScore  Decimal?  @db.Decimal(5, 2) @map("max_category_score")
   scoringVersion    String    @map("scoring_version") 
