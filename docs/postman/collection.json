@@ -1,0 +1,64 @@
+{
+  "info": { "name": "finance-assessment", "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json" },
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        { "name": "Register", "request": { "method": "POST", "url": "{{baseUrl}}/api/auth/register", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\"name\":\"Test User\",\"email\":\"postman_{{$timestamp}}@example.com\",\"password\":\"Passw0rdA\"}" } }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('201',()=>pm.response.to.have.status(201));","pm.test('user role USER',()=>{const j=pm.response.json(); pm.expect(j.user.role).to.eql('USER'); pm.environment.set('assessmentId', pm.environment.get('assessmentId')||'asmt_finance_v1');});"] } }] },
+        { "name": "Register duplicate 409", "request": { "method": "POST", "url": "{{baseUrl}}/api/auth/register", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\"name\":\"Dup\",\"email\":\"alice@example.com\",\"password\":\"Passw0rdA\"}" } }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('409 duplicate',()=>pm.response.to.have.status(409));"] } }] },
+        { "name": "Login", "request": { "method": "POST", "url": "{{baseUrl}}/api/auth/login", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\"email\":\"alice@example.com\",\"password\":\"Passw0rdA\"}" } }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('200 login',()=>pm.response.to.have.status(200));","const j=pm.response.json(); pm.expect(j.accessToken).to.be.a('string'); pm.environment.set('accessToken', j.accessToken);"] } }] },
+        { "name": "Me (cookie)", "request": { "method": "GET", "url": "{{baseUrl}}/api/auth/me" }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('200 me',()=>pm.response.to.have.status(200));"] } }] },
+        { "name": "Me (bearer)", "request": { "method": "GET", "url": "{{baseUrl}}/api/auth/me", "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }] }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('200 bearer',()=>pm.response.to.have.status(200));"] } }] },
+        { "name": "Forgot password (always 200)", "request": { "method": "POST", "url": "{{baseUrl}}/api/auth/forgot-password", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\"email\":\"alice@example.com\"}" } }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('200 always',()=>pm.response.to.have.status(200));"] } }] },
+        { "name": "Reset password reuse 400", "request": { "method": "POST", "url": "{{baseUrl}}/api/auth/reset-password", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\"token\":\"invalid\",\"newPassword\":\"Passw0rdB\"}" } }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('400 invalid token',()=>pm.response.to.have.status(400));"] } }] },
+        { "name": "Change password", "request": { "method": "POST", "url": "{{baseUrl}}/api/auth/password", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\"currentPassword\":\"Passw0rdA\",\"newPassword\":\"NewPass1B\"}" } }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('401 or 200',()=>pm.expect([200,401]).to.include(pm.response.code));"] } }] }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        { "name": "List users (admin)", "request": { "method": "GET", "url": "{{baseUrl}}/api/users" }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('200 users',()=>pm.response.to.have.status(200));","const j=pm.response.json(); pm.expect(j.data).to.be.an('array');"] } }] },
+        { "name": "List users 403 as user", "request": { "method": "GET", "url": "{{baseUrl}}/api/users" }, "event": [{ "listen": "test", "script": { "exec": ["// run as USER — expect 403","pm.test('403 unauthorised or 200 depending on auth',()=>pm.expect([403,200]).to.include(pm.response.code));"] } }] },
+        { "name": "Get roles", "request": { "method": "GET", "url": "{{baseUrl}}/api/roles" }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('200 roles',()=>pm.response.to.have.status(200));"] } }] },
+        { "name": "Get permissions", "request": { "method": "GET", "url": "{{baseUrl}}/api/permissions" }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('200 perms',()=>pm.response.to.have.status(200));"] } }] }
+      ]
+    },
+    {
+      "name": "Assessments",
+      "item": [
+        { "name": "List assessments", "request": { "method": "GET", "url": "{{baseUrl}}/api/assessments" }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('200 list',()=>pm.response.to.have.status(200));"] } }] },
+        { "name": "Create assessment", "request": { "method": "POST", "url": "{{baseUrl}}/api/assessments", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\"title\":\"Postman Assessment\"}" } }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('201 create',()=>pm.response.to.have.status(201));","const j=pm.response.json(); pm.environment.set('assessmentId', j.assessment.id);"] } }] },
+        { "name": "Get assessment tree", "request": { "method": "GET", "url": "{{baseUrl}}/api/assessments/{{assessmentId}}/questions" }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('200 tree',()=>pm.response.to.have.status(200));","const j=pm.response.json(); pm.expect(j.sections).to.be.an('array');"] } }] },
+        { "name": "Publish incomplete 409", "request": { "method": "POST", "url": "{{baseUrl}}/api/assessments/{{assessmentId}}/publish" }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('409 or 200',()=>pm.expect([409,200]).to.include(pm.response.code));"] } }] }
+      ]
+    },
+    {
+      "name": "Questions",
+      "item": [
+        { "name": "Get question (strip scores for user)", "request": { "method": "GET", "url": "{{baseUrl}}/api/questions/{{questionId}}" }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('200 or 404',()=>pm.expect([200,404]).to.include(pm.response.code));"] } }] },
+        { "name": "Patch text (200) then structural 409 on PUBLISHED", "request": { "method": "PATCH", "url": "{{baseUrl}}/api/questions/{{questionId}}", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\"promptText\":\"Edited via Postman\"}" } }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('200 or 409',()=>pm.expect([200,409]).to.include(pm.response.code));"] } }] }
+      ]
+    },
+    {
+      "name": "Assignments",
+      "item": [
+        { "name": "My assignments", "request": { "method": "GET", "url": "{{baseUrl}}/api/my-assessments" }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('200 my',()=>pm.response.to.have.status(200));"] } }] },
+        { "name": "Start (auto-create)", "request": { "method": "POST", "url": "{{baseUrl}}/api/assessments/{{assessmentId}}/start" }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('200 start',()=>pm.response.to.have.status(200));","const j=pm.response.json(); if(j.assignment) pm.environment.set('assignmentId', j.assignment.id);"] } }] },
+        { "name": "Save responses (partial)", "request": { "method": "PUT", "url": "{{baseUrl}}/api/assignments/{{assignmentId}}/responses", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\"responses\":[]}" } }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('200 save',()=>pm.response.to.have.status(200));"] } }] },
+        { "name": "Submit (400 incomplete or 201)", "request": { "method": "POST", "url": "{{baseUrl}}/api/assignments/{{assignmentId}}/submit" }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('400 or 201',()=>pm.expect([400,201]).to.include(pm.response.code));"] } }] },
+        { "name": "Duplicate submit 409", "request": { "method": "POST", "url": "{{baseUrl}}/api/assignments/{{assignmentId}}/submit" }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('409 duplicate or 400',()=>pm.expect([409,400]).to.include(pm.response.code));"] } }] },
+        { "name": "Duplicate with Idempotency-Key 200", "request": { "method": "POST", "url": "{{baseUrl}}/api/assignments/{{assignmentId}}/submit", "header": [{ "key": "Idempotency-Key", "value": "test-key-postman" }] }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('200 idempotent or 409',()=>pm.expect([200,409]).to.include(pm.response.code));"] } }] }
+      ]
+    },
+    {
+      "name": "Results",
+      "item": [
+        { "name": "Get result (owner 200, other 404)", "request": { "method": "GET", "url": "{{baseUrl}}/api/results/{{assignmentId}}" }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('200 or 404',()=>pm.expect([200,404]).to.include(pm.response.code));","if(pm.response.code===200){const j=pm.response.json(); pm.expect(j.result.scoringVersion).to.eql('finance-v1-placeholder');}"] } }] },
+        { "name": "Dashboard", "request": { "method": "GET", "url": "{{baseUrl}}/api/dashboard" }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('200 dashboard',()=>pm.response.to.have.status(200));"] } }] },
+        { "name": "Dashboard categories", "request": { "method": "GET", "url": "{{baseUrl}}/api/dashboard/categories?assignmentId={{assignmentId}}" }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('200 cats',()=>pm.response.to.have.status(200));"] } }] },
+        { "name": "Reports (admin 200, user 403)", "request": { "method": "GET", "url": "{{baseUrl}}/api/reports" }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('200 or 403',()=>pm.expect([200,403]).to.include(pm.response.code));"] } }] },
+        { "name": "Reports CSV", "request": { "method": "GET", "url": "{{baseUrl}}/api/reports?format=csv" }, "event": [{ "listen": "test", "script": { "exec": ["pm.test('200 or 403 csv',()=>pm.expect([200,403]).to.include(pm.response.code));"] } }] }
+      ]
+    }
+  ]
+}

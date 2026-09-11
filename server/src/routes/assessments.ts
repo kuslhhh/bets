@@ -15,8 +15,10 @@ assessments.get("/", async (c) => {
   const url = new URL(c.req.url);
   const status = url.searchParams.get("status");
   const type = url.searchParams.get("type");
-  const page = Math.max(1, Number(url.searchParams.get("page") ?? 1));
-  const pageSize = Math.min(100, Math.max(1, Number(url.searchParams.get("pageSize") ?? 20)));
+  const pageRaw = Number(url.searchParams.get("page") ?? 1);
+  const page = Number.isNaN(pageRaw) ? 1 : Math.max(1, pageRaw);
+  const pageSizeRaw = Number(url.searchParams.get("pageSize") ?? 20);
+  const pageSize = Number.isNaN(pageSizeRaw) ? 20 : Math.min(100, Math.max(1, pageSizeRaw));
   const isAdmin = user.permissions.includes("assessments.manage");
 
   const where: Record<string, unknown> = {};
@@ -46,6 +48,7 @@ const createAssessmentSchema = z.object({
   title: z.string().min(1).max(200),
   description: z.string().max(2000).optional().nullable(),
   type: z.string().min(1).max(50).optional(),
+  cloneTemplate: z.boolean().optional(),
 });
 
 assessments.post("/", requirePermission("assessments.manage"), async (c) => {
@@ -61,6 +64,44 @@ assessments.post("/", requirePermission("assessments.manage"), async (c) => {
       createdBy: user.id,
     },
   });
+  if (parsed.data.cloneTemplate) {
+    // Clone from seed finance assessment
+    const template = await prisma.assessment.findUnique({
+      where: { id: "asmt_finance_v1" },
+      include: { sections: { include: { categories: true, questions: { include: { options: true } } } } },
+    });
+    if (template) {
+      for (const sec of template.sections) {
+        const newSec = await prisma.section.create({ data: { assessmentId: assessment.id, order: sec.order, title: sec.title, sourceText: sec.sourceText, description: sec.description } });
+        const catMap = new Map<string, string>();
+        for (const cat of sec.categories) {
+          const newCat = await prisma.category.create({ data: { sectionId: newSec.id, order: cat.order, name: cat.name, sourceText: cat.sourceText, description: cat.description } });
+          catMap.set(cat.id, newCat.id);
+        }
+        for (const q of sec.questions) {
+          const newQ = await prisma.question.create({
+            data: {
+              assessmentId: assessment.id,
+              sectionId: newSec.id,
+              categoryId: q.categoryId ? catMap.get(q.categoryId) ?? null : null,
+              sourceNumber: q.sourceNumber,
+              type: q.type,
+              promptText: q.promptText,
+              sourceText: q.sourceText,
+              order: q.order,
+              isRequired: q.isRequired,
+              slotCount: q.slotCount,
+              status: q.status,
+              createdBy: user.id,
+            },
+          });
+          for (const opt of q.options) {
+            await prisma.questionOption.create({ data: { questionId: newQ.id, order: opt.order, label: opt.label, optionText: opt.optionText, scoreValue: opt.scoreValue } });
+          }
+        }
+      }
+    }
+  }
   await audit({ actorId: user.id, action: "assessments.create", entity: "assessment", entityId: assessment.id });
   return c.json({ assessment }, 201);
 });
@@ -88,6 +129,16 @@ assessments.get("/:id", async (c) => {
   if (!assessment) return notFound(c);
   const isAdmin = user.permissions.includes("assessments.manage");
   if (!isAdmin && assessment.status !== "PUBLISHED") return notFound(c);
+  if (!isAdmin) {
+    // Strip scoreValue for users
+    (assessment as any).sections = (assessment as any).sections.map((s: any) => ({
+      ...s,
+      questions: s.questions.map((q: any) => ({
+        ...q,
+        options: q.options.map((o: any) => ({ id: o.id, label: o.label, optionText: o.optionText, order: o.order })),
+      })),
+    }));
+  }
   return c.json({ assessment });
 });
 
@@ -162,6 +213,17 @@ assessments.post("/:id/close", requirePermission("assessments.manage"), async (c
   return c.json({ assessment: updated });
 });
 
+// POST /api/assessments/:id/archive
+assessments.post("/:id/archive", requirePermission("assessments.manage"), async (c) => {
+  const id = c.req.param("id");
+  const assessment = await prisma.assessment.findUnique({ where: { id } });
+  if (!assessment) return notFound(c);
+  if (assessment.status === "ARCHIVED") return c.json({ assessment });
+  const updated = await prisma.assessment.update({ where: { id }, data: { status: "ARCHIVED" } });
+  await audit({ actorId: c.get("user").id, action: "assessments.archive", entity: "assessment", entityId: id });
+  return c.json({ assessment: updated });
+});
+
 // POST /api/assessments/:id/sections — create section
 const createSectionSchema = z.object({ title: z.string().min(1).max(200), order: z.number().int().min(0).optional(), description: z.string().max(2000).optional().nullable() });
 assessments.post("/:id/sections", requirePermission("assessments.manage"), async (c) => {
@@ -198,7 +260,7 @@ assessments.get("/:id/questions", async (c) => {
     ? sections.map((s) => ({
         ...s,
         questions: s.questions
-          .filter((q) => q.status === "ACTIVE" || q.status === "DRAFT")
+          .filter((q) => q.status === "ACTIVE")
           .map((q) => ({ ...q, options: q.options.map((o) => ({ id: o.id, label: o.label, optionText: o.optionText, order: o.order })) })),
       }))
     : sections;

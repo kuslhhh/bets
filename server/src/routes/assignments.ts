@@ -4,6 +4,9 @@ import { prisma } from "../lib/prisma";
 import { getAuthUser, requirePermission } from "../lib/auth";
 import { audit } from "../lib/audit";
 import { badRequest, conflict, notFound, unauthenticated, zodDetails } from "../lib/errors";
+import { SCORING_VERSION } from "../lib/scoring/constants";
+import { avg2, computeOverallSplit } from "../lib/scoring/engine";
+import { rateLimit } from "../lib/rate-limit";
 
 export const assignments = new Hono();
 
@@ -42,8 +45,10 @@ async function handleMyAssessments(c: import("hono").Context) {
   const user = await getAuthUser(c);
   if (!user) return unauthenticated(c);
   const url = new URL(c.req.url);
-  const page = Math.max(1, Number(url.searchParams.get("page") ?? 1));
-  const pageSize = Math.min(100, Math.max(1, Number(url.searchParams.get("pageSize") ?? 20)));
+  const pageRaw = Number(url.searchParams.get("page") ?? 1);
+  const page = Number.isNaN(pageRaw) ? 1 : Math.max(1, pageRaw);
+  const pageSizeRaw = Number(url.searchParams.get("pageSize") ?? 20);
+  const pageSize = Number.isNaN(pageSizeRaw) ? 20 : Math.min(100, Math.max(1, pageSizeRaw));
   const where = { userId: user.id };
   const [total, data] = await Promise.all([
     prisma.assessmentAssignment.count({ where }),
@@ -272,7 +277,7 @@ assignments.put("/assessments/:id/responses", async (c) => {
 
 // POST /api/assessments/:id/assign — optional admin bulk assign
 const assignSchema = z.object({ userIds: z.array(z.string().uuid()).optional(), assignAllActive: z.boolean().optional(), dueAt: z.string().datetime().optional().nullable() });
-assignments.post("/assessments/:id/assign", requirePermission("assignments.manage"), async (c) => {
+assignments.post("/assessments/:id/assign", rateLimit({ windowMs: 60_000, max: 20, keyPrefix: "assign" }), requirePermission("assignments.manage"), async (c) => {
   const assessmentId = c.req.param("id");
   const assessment = await prisma.assessment.findUnique({ where: { id: assessmentId } });
   if (!assessment) return notFound(c);
@@ -296,4 +301,171 @@ assignments.post("/assessments/:id/assign", requirePermission("assignments.manag
   }
   await audit({ actorId: c.get("user").id, action: "assignments.bulk_assign", entity: "assessment", entityId: assessmentId, metadata: { created, skipped } });
   return c.json({ created, skipped });
+});
+
+// POST /api/assignments/:id/submit — validate → scoring transaction
+assignments.post("/assignments/:id/submit", rateLimit({ windowMs: 60_000, max: 10, keyPrefix: "submit" }), async (c) => {
+  const user = await getAuthUser(c);
+  if (!user) return unauthenticated(c);
+  const id = c.req.param("id");
+  const assignment = await prisma.assessmentAssignment.findUnique({ where: { id }, include: { assessment: true } });
+  if (!assignment) return notFound(c);
+  if (assignment.userId !== user.id && !user.permissions.includes("assignments.manage")) return notFound(c);
+  if (assignment.status === "SUBMITTED" || assignment.status === "EXPIRED") return conflict(c, "already submitted or expired");
+  if (assignment.status !== "ASSIGNED" && assignment.status !== "IN_PROGRESS") return conflict(c, "invalid status");
+  if (assignment.assessment.status !== "PUBLISHED") return conflict(c, "assessment not published");
+  if (assignment.dueAt && new Date(assignment.dueAt) < new Date()) {
+    await prisma.assessmentAssignment.update({ where: { id }, data: { status: "EXPIRED" } });
+    return conflict(c, "assignment expired");
+  }
+  // Check existing result (idempotency)
+  const existingResult = await prisma.assessmentResult.findUnique({ where: { assignmentId: id } });
+  if (existingResult) {
+    const key = c.req.header("Idempotency-Key");
+    if (key) {
+      return c.json({ resultId: existingResult.id, overallSelf: existingResult.overallSelf ? Number(existingResult.overallSelf) : null, overallOrg: existingResult.overallOrg ? Number(existingResult.overallOrg) : null, overallCombined: (existingResult as any).overallCombined ? Number((existingResult as any).overallCombined) : null, idempotent: true }, 200);
+    }
+    return conflict(c, "already submitted");
+  }
+
+  // Load required questions
+  const requiredQuestions = await prisma.question.findMany({
+    where: { assessmentId: assignment.assessmentId, isRequired: true, type: "SINGLE_SELECT" },
+  });
+  const responses = await prisma.response.findMany({ where: { assignmentId: id } });
+  const responseMap = new Map(responses.map((r) => [r.questionId, r]));
+  const missing: string[] = [];
+  for (const q of requiredQuestions) {
+    if (!responseMap.has(q.id)) missing.push(q.id);
+  }
+  if (missing.length) return badRequest(c, { missing, message: "incomplete — required questions missing" });
+
+  // Load categories for grouping
+  const categories = await prisma.category.findMany({
+    where: { section: { assessmentId: assignment.assessmentId } },
+    orderBy: [{ sectionId: "asc" }, { order: "asc" }],
+    include: { section: true },
+  });
+  // Seed order is cat_s1_knowledge, tool, decision, cat_s2_knowledge, tool, decision — matches Self/Org split
+  const questionsByCategory = new Map<string, string[]>();
+  for (const q of requiredQuestions) {
+    if (!q.categoryId) continue;
+    if (!questionsByCategory.has(q.categoryId)) questionsByCategory.set(q.categoryId, []);
+    questionsByCategory.get(q.categoryId)!.push(q.id);
+  }
+
+  // Build category scores
+  const categoryScoresData: { categoryId: string; averageScore: number; questionCount: number; minScore: number | null; maxScore: number | null }[] = [];
+  const selfScores: number[] = [];
+  const orgScores: number[] = [];
+  for (const cat of categories) {
+    const qIds = questionsByCategory.get(cat.id) ?? [];
+    if (qIds.length === 0) continue;
+    const scores = qIds.map((qid) => responseMap.get(qid)!.scoreValue);
+    const avg = avg2(scores);
+    const min = Math.min(...scores);
+    const max = Math.max(...scores);
+    categoryScoresData.push({ categoryId: cat.id, averageScore: avg, questionCount: scores.length, minScore: min, maxScore: max });
+    if (cat.section.order === 1) selfScores.push(avg);
+    else orgScores.push(avg);
+  }
+
+  const overall = computeOverallSplit(selfScores, orgScores);
+
+  // Transaction: create result + category scores + update assignment
+  const result = await prisma.$transaction(async (tx) => {
+    const res = await tx.assessmentResult.create({
+      data: {
+        assignmentId: id,
+        overallSelf: overall.overallSelf,
+        overallOrg: overall.overallOrg,
+        overallCombined: overall.overallCombined,
+        minCategoryScore: overall.minCategoryScore,
+        maxCategoryScore: overall.maxCategoryScore,
+        scoringVersion: SCORING_VERSION,
+      },
+    });
+    for (const cs of categoryScoresData) {
+      await tx.categoryScore.create({
+        data: { resultId: res.id, categoryId: cs.categoryId, averageScore: cs.averageScore, questionCount: cs.questionCount, minScore: cs.minScore, maxScore: cs.maxScore },
+      });
+    }
+    await tx.assessmentAssignment.update({ where: { id }, data: { status: "SUBMITTED", submittedAt: new Date() } });
+    return res;
+  });
+
+  await audit({ actorId: user.id, action: "assignments.submit", entity: "assignment", entityId: id });
+
+  return c.json(
+    {
+      resultId: result.id,
+      overallSelf: overall.overallSelf,
+      overallOrg: overall.overallOrg,
+      overallCombined: overall.overallCombined,
+      minCategoryScore: overall.minCategoryScore,
+      maxCategoryScore: overall.maxCategoryScore,
+    },
+    201,
+  );
+});
+
+// Alias POST /api/assessments/:id/submit (self-serve, find active assignment)
+assignments.post("/assessments/:id/submit", async (c) => {
+  const user = await getAuthUser(c);
+  if (!user) return unauthenticated(c);
+  const assessmentId = c.req.param("id");
+  const assignment = await prisma.assessmentAssignment.findFirst({
+    where: { assessmentId, userId: user.id, status: { in: ["ASSIGNED", "IN_PROGRESS"] } },
+  });
+  if (!assignment) return badRequest(c, "no active assignment — start assessment first");
+  // delegate by reusing logic via internal fetch? simpler duplicate
+  const existingResult = await prisma.assessmentResult.findUnique({ where: { assignmentId: assignment.id } });
+  if (existingResult) {
+    const key2 = c.req.header("Idempotency-Key");
+    if (key2) return c.json({ resultId: existingResult.id, idempotent: true }, 200);
+    return conflict(c, "already submitted");
+  }
+  // Reuse submit handler by forwarding to same flow with assignment.id
+  // To avoid duplication, call submit logic directly:
+  if (assignment.status === "SUBMITTED" || assignment.status === "EXPIRED") return conflict(c, "already submitted or expired");
+  const assessment = await prisma.assessment.findUnique({ where: { id: assessmentId } });
+  if (!assessment || assessment.status !== "PUBLISHED") return conflict(c, "assessment not published");
+  const requiredQuestions = await prisma.question.findMany({ where: { assessmentId, isRequired: true, type: "SINGLE_SELECT" } });
+  const responses = await prisma.response.findMany({ where: { assignmentId: assignment.id } });
+  const responseMap = new Map(responses.map((r) => [r.questionId, r]));
+  const missing: string[] = [];
+  for (const q of requiredQuestions) if (!responseMap.has(q.id)) missing.push(q.id);
+  if (missing.length) return badRequest(c, { missing, message: "incomplete" });
+  const categories = await prisma.category.findMany({ where: { section: { assessmentId } }, orderBy: [{ sectionId: "asc" }, { order: "asc" }], include: { section: true } });
+  const questionsByCategory = new Map<string, string[]>();
+  for (const q of requiredQuestions) {
+    if (!q.categoryId) continue;
+    if (!questionsByCategory.has(q.categoryId)) questionsByCategory.set(q.categoryId, []);
+    questionsByCategory.get(q.categoryId)!.push(q.id);
+  }
+  const categoryScoresData: { categoryId: string; averageScore: number; questionCount: number; minScore: number | null; maxScore: number | null }[] = [];
+  const selfScores: number[] = [];
+  const orgScores: number[] = [];
+  for (const cat of categories) {
+    const qIds = questionsByCategory.get(cat.id) ?? [];
+    if (qIds.length === 0) continue;
+    const scores = qIds.map((qid) => responseMap.get(qid)!.scoreValue);
+    const avg = avg2(scores);
+    categoryScoresData.push({ categoryId: cat.id, averageScore: avg, questionCount: scores.length, minScore: Math.min(...scores), maxScore: Math.max(...scores) });
+    if (cat.section.order === 1) selfScores.push(avg);
+    else orgScores.push(avg);
+  }
+  const overall = computeOverallSplit(selfScores, orgScores);
+  const result = await prisma.$transaction(async (tx) => {
+    const res = await tx.assessmentResult.create({
+      data: { assignmentId: assignment.id, overallSelf: overall.overallSelf, overallOrg: overall.overallOrg, overallCombined: overall.overallCombined, minCategoryScore: overall.minCategoryScore, maxCategoryScore: overall.maxCategoryScore, scoringVersion: SCORING_VERSION },
+    });
+    for (const cs of categoryScoresData) {
+      await tx.categoryScore.create({ data: { resultId: res.id, categoryId: cs.categoryId, averageScore: cs.averageScore, questionCount: cs.questionCount, minScore: cs.minScore, maxScore: cs.maxScore } });
+    }
+    await tx.assessmentAssignment.update({ where: { id: assignment.id }, data: { status: "SUBMITTED", submittedAt: new Date() } });
+    return res;
+  });
+  await audit({ actorId: user.id, action: "assignments.submit", entity: "assignment", entityId: assignment.id });
+  return c.json({ resultId: result.id, overallSelf: overall.overallSelf, overallOrg: overall.overallOrg, overallCombined: overall.overallCombined, minCategoryScore: overall.minCategoryScore, maxCategoryScore: overall.maxCategoryScore }, 201);
 });

@@ -1,0 +1,10 @@
+{
+  "id": "env-local",
+  "name": "local",
+  "values": [
+    { "key": "baseUrl", "value": "http://localhost:3001", "enabled": true },
+    { "key": "assessmentId", "value": "asmt_finance_v1", "enabled": true },
+    { "key": "assignmentId", "value": "", "enabled": true },
+    { "key": "accessToken", "value": "", "enabled": true }
+  ]
+}

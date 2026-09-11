@@ -15,6 +15,7 @@ import { audit } from "../lib/audit";
 import { sendPasswordResetEmail, PASSWORD_RESET_TOKEN_TTL_MINUTES } from "../lib/email";
 import { mintAccessJWT } from "../lib/jwt";
 import { badRequest, conflict, unauthenticated, locked, zodDetails } from "../lib/errors";
+import { rateLimit } from "../lib/rate-limit";
 
 export const auth = new Hono();
 
@@ -32,7 +33,7 @@ const registerSchema = z.object({
     .regex(/[0-9]/, "must contain a digit"),
 });
 
-auth.post("/register", async (c) => {
+auth.post("/register", rateLimit({ windowMs: 60_000, max: 20, keyPrefix: "register" }), async (c) => {
   const parsed = registerSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return badRequest(c, zodDetails(parsed.error));
 
@@ -58,7 +59,7 @@ auth.post("/register", async (c) => {
 
 const loginSchema = z.object({ email: z.string().min(3).max(254), password: z.string().min(1) });
 
-auth.post("/login", async (c) => {
+auth.post("/login", rateLimit({ windowMs: 60_000, max: 10, keyPrefix: "login" }), async (c) => {
   const parsed = loginSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return badRequest(c, "email and password are required");
 
@@ -174,7 +175,13 @@ auth.post("/password", async (c) => {
   if (!valid) return unauthenticated(c);
 
   const passwordHash = await bcrypt.hash(parsed.data.newPassword, 12);
-  await prisma.user.update({ where: { id: user.id }, data: { passwordHash } });
+  const currentToken = c.req.header("cookie")?.match(/fa_session=([^;]+)/)?.[1];
+  await prisma.$transaction(async (tx) => {
+    await tx.user.update({ where: { id: user.id }, data: { passwordHash } });
+    // revoke other sessions, keep current one if present
+    if (currentToken) await tx.session.deleteMany({ where: { userId: user.id, NOT: { sessionToken: currentToken } } });
+    else await tx.session.deleteMany({ where: { userId: user.id } });
+  });
   await audit({ actorId: user.id, action: "auth.password_changed", entity: "user", entityId: user.id });
 
   return c.json({ ok: true });
@@ -182,7 +189,7 @@ auth.post("/password", async (c) => {
 
 const forgotPassSchema = z.object({ email: z.string().min(3).max(254) });
 
-auth.post("/forgot-password", async (c) => {
+auth.post("/forgot-password", rateLimit({ windowMs: 60_000, max: 5, keyPrefix: "forgot" }), async (c) => {
   const parsed = forgotPassSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return badRequest(c, "valid email required");
 
@@ -220,7 +227,7 @@ const resetPasswordSchema = z.object({
     .regex(/[0-9]/, "must contain a digit"),
 });
 
-auth.post("/reset-password", async (c) => {
+auth.post("/reset-password", rateLimit({ windowMs: 60_000, max: 5, keyPrefix: "reset" }), async (c) => {
   const parsed = resetPasswordSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return badRequest(c, "token and a strong newPassword are required");
 
