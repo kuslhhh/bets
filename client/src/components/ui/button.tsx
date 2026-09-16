@@ -8,16 +8,16 @@ const variantCls: Record<Variant, string> = {
   primary:
     "bg-[var(--bets-primary)] text-white hover:bg-[var(--bets-primary-dark)] focus-visible:ring-[var(--bets-primary)] border-transparent",
   secondary:
-    "bg-white text-[var(--bets-text)] border-[var(--color-border-strong)] hover:bg-[#f8f5fc] hover:border-[var(--bets-primary)]",
+    "bg-white text-[var(--bets-text-dark)] border-[var(--color-border-strong)] hover:bg-[#f8f8f9] hover:border-[var(--bets-text-muted)]",
   outline:
-    "bg-white text-[var(--bets-primary)] border-[var(--bets-primary)] hover:bg-[#f5eefb]",
-  ghost: "bg-transparent text-[var(--bets-text)] hover:bg-[#f5eefb] hover:text-[var(--bets-primary)] border-transparent",
+    "bg-white text-[var(--bets-primary)] border-[var(--bets-primary)] hover:bg-[#faf5ff]",
+  ghost: "bg-transparent text-[var(--bets-text)] hover:bg-[#f8f8f9] hover:text-[var(--bets-text-dark)] border-transparent",
 };
 
 const sizeCls: Record<Size, string> = {
-  sm: "h-8 px-3 text-sm",
-  md: "h-9 px-4 text-sm",
-  lg: "h-10 px-6 text-sm",
+  sm: "h-8 px-3 text-[13px]",
+  md: "h-9 px-4 text-[13.5px]",
+  lg: "h-10 px-6 text-[13.5px]",
 };
 
 export function Button({
@@ -29,7 +29,7 @@ export function Button({
   return (
     <button
       className={cn(
-        "inline-flex items-center justify-center rounded-md border font-medium transition-colors disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2",
+        "inline-flex items-center justify-center rounded-[var(--radius-input)] border font-semibold transition-colors disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--bets-primary)] focus-visible:ring-offset-1",
         variantCls[variant],
         sizeCls[size],
         className,

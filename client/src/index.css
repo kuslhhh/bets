@@ -4,20 +4,29 @@
 :root {
   --bets-primary: #743e95;
   --bets-primary-dark: #5f307d;
-  --bets-text: #333333;
-  --bets-text-muted: #646979;
-  --bets-text-dark: #33373d;
+  --bets-text: #222222;
+  --bets-text-muted: #5a5e6b;
+  --bets-text-dark: #1a1d23;
   --bets-black: #000000;
   --bets-white: #ffffff;
 
   /* semantic aliases — use these in components, not raw hex */
   --color-bg: var(--bets-white);
+  --color-canvas: #ffffff;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f8f8f9;
   --color-text: var(--bets-text);
   --color-text-muted: var(--bets-text-muted);
   --color-text-dark: var(--bets-text-dark);
-  --color-border: #e9e2f0; /* light purple-tinted neutral (derived from primary) */
-  --color-border-strong: #ddd3e8;
+  --color-border: #e5e5e5;
+  --color-border-strong: #d1d5db;
+  --color-border-soft: #eef0f3;
   --ring: var(--bets-primary);
+  --radius-card: 3px;
+  --radius-input: 2px;
+  --shadow-card: none;
+  --shadow-card-hover: none;
+  --content-max: 1260px;
 }
 
 @theme {

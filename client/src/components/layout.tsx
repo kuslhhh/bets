@@ -34,10 +34,10 @@ export function Layout() {
                 <NavItem to="/my-assessments" label="My Assessments" />
                 {isAdmin && (
                   <>
-                    <NavItem to="/dashboard" label="Dashboard" />
-                    <NavItem to="/users" label="Users" />
-                    <NavItem to="/assessments" label="Assessments" />
-                    <NavItem to="/reports" label="Reports" />
+                    <NavItem to="/admin/dashboard" label="Dashboard" />
+                    <NavItem to="/admin/users" label="Users" />
+                    <NavItem to="/admin/assessments" label="Assessments" />
+                    <NavItem to="/admin/reports" label="Reports" />
                   </>
                 )}
                 <span className="ml-2 text-sm text-[var(--bets-text-muted)] hidden sm:inline">

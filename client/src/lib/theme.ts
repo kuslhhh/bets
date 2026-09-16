@@ -3,13 +3,16 @@
 export const betsColors = {
   primary: "#743E95",
   primaryDark: "#5F307D",
-  text: "#333333",
-  textMuted: "#646979",
-  textDark: "#33373D",
+  text: "#222222",
+  textMuted: "#5A5E6B",
+  textDark: "#1A1D23",
   black: "#000000",
   white: "#FFFFFF",
-  border: "#E9E2F0",
-  borderStrong: "#DDD3E8",
+  canvas: "#FFFFFF",
+  surface: "#FFFFFF",
+  border: "#E5E7EB",
+  borderStrong: "#D1D5DB",
+  borderSoft: "#EEF0F3",
 } as const;
 
 // For CSS var usage in inline styles: `var(--bets-primary)` etc.
