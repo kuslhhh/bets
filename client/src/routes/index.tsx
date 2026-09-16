@@ -16,18 +16,23 @@ function AdminOnly({ children }: { children: React.ReactNode }) {
 }
 
 import { LoginPage } from "./Login";
-import { RegisterPage } from "./Register";
+import { RegisterLandingPage } from "./RegisterLanding";
 import { AvailablePage } from "./Available";
 import { MyAssessmentsPage } from "./MyAssessments";
 import { DashboardPage } from "./Dashboard";
+import { TakingPage } from "./Taking";
+import { ResultsPage } from "./Results";
+import { ReportsPage } from "./Reports";
+import { UsersPage } from "./Users";
+import { AssessmentsPage, AssessmentDetailPage } from "./Assessments";
 
 export const router = createBrowserRouter([
+  { path: "/", element: <RegisterLandingPage /> },
+  { path: "/register", element: <Navigate to="/" replace /> },
   {
     element: <Layout />,
     children: [
-      { path: "/", element: <Navigate to="/available" replace /> },
       { path: "/login", element: <LoginPage /> },
-      { path: "/register", element: <RegisterPage /> },
       {
         path: "/available",
         element: (
@@ -44,13 +49,102 @@ export const router = createBrowserRouter([
           </Protected>
         ),
       },
+      // Admin prefixed routes + legacy /dashboard /users aliases
+      { path: "/dashboard", element: <Navigate to="/admin/dashboard" replace /> },
+      { path: "/users", element: <Navigate to="/admin/users" replace /> },
+      { path: "/reports", element: <Navigate to="/admin/reports" replace /> },
+      { path: "/assessments", element: <Navigate to="/admin/assessments" replace /> },
       {
-        path: "/dashboard",
+        path: "/admin/dashboard",
         element: (
           <Protected>
             <AdminOnly>
               <DashboardPage />
             </AdminOnly>
+          </Protected>
+        ),
+      },
+      {
+        path: "/admin/dashboard/:userId",
+        element: (
+          <Protected>
+            <AdminOnly>
+              <DashboardPage />
+            </AdminOnly>
+          </Protected>
+        ),
+      },
+      {
+        path: "/admin/users",
+        element: (
+          <Protected>
+            <AdminOnly>
+              <UsersPage />
+            </AdminOnly>
+          </Protected>
+        ),
+      },
+      {
+        path: "/admin/users/:userId",
+        element: (
+          <Protected>
+            <AdminOnly>
+              <DashboardPage />
+            </AdminOnly>
+          </Protected>
+        ),
+      },
+      {
+        path: "/admin/reports",
+        element: (
+          <Protected>
+            <AdminOnly>
+              <ReportsPage />
+            </AdminOnly>
+          </Protected>
+        ),
+      },
+      {
+        path: "/admin/assessments",
+        element: (
+          <Protected>
+            <AdminOnly>
+              <AssessmentsPage />
+            </AdminOnly>
+          </Protected>
+        ),
+      },
+      {
+        path: "/admin/assessments/:id",
+        element: (
+          <Protected>
+            <AdminOnly>
+              <AssessmentDetailPage />
+            </AdminOnly>
+          </Protected>
+        ),
+      },
+      {
+        path: "/assignments/:id",
+        element: (
+          <Protected>
+            <TakingPage />
+          </Protected>
+        ),
+      },
+      {
+        path: "/assessments/:id/take",
+        element: (
+          <Protected>
+            <TakingPage />
+          </Protected>
+        ),
+      },
+      {
+        path: "/results/:id",
+        element: (
+          <Protected>
+            <ResultsPage />
           </Protected>
         ),
       },

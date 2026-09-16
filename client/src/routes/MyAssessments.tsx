@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { apiFetch } from "../lib/api";
+import { toMessage } from "../lib/errors";
 import { Card, CardHeader, CardTitle, CardContent } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
+import { Button } from "../components/ui/button";
 
 type Row = {
   id: string;
@@ -17,7 +20,7 @@ export function MyAssessmentsPage() {
   useEffect(() => {
     apiFetch<{ data: Row[] }>("/my-assessments")
       .then((r) => setData(r.data))
-      .catch((e: unknown) => setErr(e instanceof Error ? e.message : String(e)));
+      .catch((e: unknown) => setErr(toMessage(e)));
   }, []);
 
   return (
@@ -36,15 +39,26 @@ export function MyAssessmentsPage() {
                 </Badge>
               </CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-3">
               <p className="text-sm text-[var(--bets-text-muted)]">
                 Progress {r.progress.answered}/{r.progress.required}
               </p>
-              <div className="mt-2 h-2 rounded-full bg-[#f0e8f7] overflow-hidden">
+              <div className="h-2 rounded-full bg-[#f0e8f7] overflow-hidden">
                 <div
                   className="h-full bg-[var(--bets-primary)] transition-all"
                   style={{ width: `${r.progress.required ? (r.progress.answered / r.progress.required) * 100 : 0}%` }}
                 />
+              </div>
+              <div className="flex gap-2">
+                {r.status !== "SUBMITTED" ? (
+                  <Link to={`/assignments/${r.id}`}>
+                    <Button size="sm">{r.status === "IN_PROGRESS" ? "Resume" : "Continue"}</Button>
+                  </Link>
+                ) : (
+                  <Link to={`/results/${r.id}`}>
+                    <Button variant="secondary" size="sm">View Results</Button>
+                  </Link>
+                )}
               </div>
             </CardContent>
           </Card>

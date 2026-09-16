@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
+import { toMessage } from "../lib/errors";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import { useNavigate } from "react-router-dom";
-
-type Assessment = { id: string; title: string; description?: string | null; status: string };
+import type { AssessmentListItem as Assessment } from "../lib/types";
 
 export function AvailablePage() {
   const [data, setData] = useState<Assessment[]>([]);
@@ -15,7 +15,7 @@ export function AvailablePage() {
   useEffect(() => {
     apiFetch<{ data: Assessment[] }>("/assessments?status=PUBLISHED")
       .then((r) => setData(r.data))
-      .catch((e: unknown) => setErr(e instanceof Error ? e.message : String(e)));
+      .catch((e: unknown) => setErr(toMessage(e)));
   }, []);
 
   const start = async (id: string) => {
@@ -23,11 +23,9 @@ export function AvailablePage() {
       const r = (await apiFetch<{ assignment: { id: string } }>(`/assessments/${id}/start`, { method: "POST" })) as {
         assignment: { id: string };
       };
-      nav(`/my-assessments`);
-      // optional: navigate directly to taking if route exists
-      void r;
+      nav(`/assignments/${r.assignment.id}`);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(toMessage(e));
     }
   };
 
