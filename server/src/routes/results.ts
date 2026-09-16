@@ -23,9 +23,10 @@ results.get("/:assignmentId", async (c) => {
   } else {
     if (!user.permissions.includes("results.individual.view")) return notFound(c);
   }
-  const assignment = await prisma.assessmentAssignment.findUnique({ where: { id: assignmentId }, include: { assessment: true } });
-  const responses = await prisma.response.findMany({ where: { assignmentId } });
-  const textAnswers = await prisma.textAnswer.findMany({ where: { assignmentId } });
+  const [responses, textAnswers] = await Promise.all([
+    prisma.response.findMany({ where: { assignmentId } }),
+    prisma.textAnswer.findMany({ where: { assignmentId } }),
+  ]);
 
   const categories = result.categoryScores.map((cs: any) => ({
     id: cs.categoryId,

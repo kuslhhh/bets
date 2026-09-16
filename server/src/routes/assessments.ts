@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { getAuthUser, requirePermission } from "../lib/auth";
 import { audit } from "../lib/audit";
+import { parsePagination } from "../lib/pagination";
 import { badRequest, conflict, notFound, unauthenticated, zodDetails } from "../lib/errors";
 
 export const assessments = new Hono();
@@ -15,10 +16,7 @@ assessments.get("/", async (c) => {
   const url = new URL(c.req.url);
   const status = url.searchParams.get("status");
   const type = url.searchParams.get("type");
-  const pageRaw = Number(url.searchParams.get("page") ?? 1);
-  const page = Number.isNaN(pageRaw) ? 1 : Math.max(1, pageRaw);
-  const pageSizeRaw = Number(url.searchParams.get("pageSize") ?? 20);
-  const pageSize = Number.isNaN(pageSizeRaw) ? 20 : Math.min(100, Math.max(1, pageSizeRaw));
+  const { page, pageSize } = parsePagination(url);
   const isAdmin = user.permissions.includes("assessments.manage");
 
   const where: Record<string, unknown> = {};
@@ -65,41 +63,44 @@ assessments.post("/", requirePermission("assessments.manage"), async (c) => {
     },
   });
   if (parsed.data.cloneTemplate) {
-    // Clone from seed finance assessment
+    // Clone from seed finance assessment — one transaction so a failure
+    // never leaves a half-cloned assessment behind.
     const template = await prisma.assessment.findUnique({
       where: { id: "asmt_finance_v1" },
       include: { sections: { include: { categories: true, questions: { include: { options: true } } } } },
     });
     if (template) {
-      for (const sec of template.sections) {
-        const newSec = await prisma.section.create({ data: { assessmentId: assessment.id, order: sec.order, title: sec.title, sourceText: sec.sourceText, description: sec.description } });
-        const catMap = new Map<string, string>();
-        for (const cat of sec.categories) {
-          const newCat = await prisma.category.create({ data: { sectionId: newSec.id, order: cat.order, name: cat.name, sourceText: cat.sourceText, description: cat.description } });
-          catMap.set(cat.id, newCat.id);
-        }
-        for (const q of sec.questions) {
-          const newQ = await prisma.question.create({
-            data: {
-              assessmentId: assessment.id,
-              sectionId: newSec.id,
-              categoryId: q.categoryId ? catMap.get(q.categoryId) ?? null : null,
-              sourceNumber: q.sourceNumber,
-              type: q.type,
-              promptText: q.promptText,
-              sourceText: q.sourceText,
-              order: q.order,
-              isRequired: q.isRequired,
-              slotCount: q.slotCount,
-              status: q.status,
-              createdBy: user.id,
-            },
-          });
-          for (const opt of q.options) {
-            await prisma.questionOption.create({ data: { questionId: newQ.id, order: opt.order, label: opt.label, optionText: opt.optionText, scoreValue: opt.scoreValue } });
+      await prisma.$transaction(async (tx) => {
+        for (const sec of template.sections) {
+          const newSec = await tx.section.create({ data: { assessmentId: assessment.id, order: sec.order, title: sec.title, sourceText: sec.sourceText, description: sec.description } });
+          const catMap = new Map<string, string>();
+          for (const cat of sec.categories) {
+            const newCat = await tx.category.create({ data: { sectionId: newSec.id, order: cat.order, name: cat.name, sourceText: cat.sourceText, description: cat.description } });
+            catMap.set(cat.id, newCat.id);
+          }
+          for (const q of sec.questions) {
+            const newQ = await tx.question.create({
+              data: {
+                assessmentId: assessment.id,
+                sectionId: newSec.id,
+                categoryId: q.categoryId ? catMap.get(q.categoryId) ?? null : null,
+                sourceNumber: q.sourceNumber,
+                type: q.type,
+                promptText: q.promptText,
+                sourceText: q.sourceText,
+                order: q.order,
+                isRequired: q.isRequired,
+                slotCount: q.slotCount,
+                status: q.status,
+                createdBy: user.id,
+              },
+            });
+            for (const opt of q.options) {
+              await tx.questionOption.create({ data: { questionId: newQ.id, order: opt.order, label: opt.label, optionText: opt.optionText, scoreValue: opt.scoreValue } });
+            }
           }
         }
-      }
+      });
     }
   }
   await audit({ actorId: user.id, action: "assessments.create", entity: "assessment", entityId: assessment.id });

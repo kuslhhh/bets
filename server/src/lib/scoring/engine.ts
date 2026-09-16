@@ -42,3 +42,42 @@ export function computeOverallSplit(selfScores: number[], orgScores: number[]) {
   const all = [...selfScores, ...orgScores];
   return { overallSelf, overallOrg, overallCombined, minCategoryScore: Math.min(...all), maxCategoryScore: Math.max(...all) };
 }
+
+export interface CategoryBreakdown {
+  categoryScoresData: { categoryId: string; averageScore: number; questionCount: number; minScore: number | null; maxScore: number | null }[];
+  selfScores: number[];
+  orgScores: number[];
+}
+
+/** Pure: group required question scores into per-category breakdown + Self/Org splits. */
+export function computeCategoryBreakdown(
+  categories: { id: string; sectionOrder: number }[],
+  requiredQuestions: { id: string; categoryId: string | null }[],
+  scoreByQuestion: Map<string, number>,
+): CategoryBreakdown {
+  const questionsByCategory = new Map<string, string[]>();
+  for (const q of requiredQuestions) {
+    if (!q.categoryId) continue;
+    if (!questionsByCategory.has(q.categoryId)) questionsByCategory.set(q.categoryId, []);
+    questionsByCategory.get(q.categoryId)!.push(q.id);
+  }
+  const categoryScoresData: CategoryBreakdown["categoryScoresData"] = [];
+  const selfScores: number[] = [];
+  const orgScores: number[] = [];
+  for (const cat of categories) {
+    const qIds = questionsByCategory.get(cat.id) ?? [];
+    if (qIds.length === 0) continue;
+    const scores = qIds.map((qid) => scoreByQuestion.get(qid)!);
+    const avg = avg2(scores);
+    categoryScoresData.push({
+      categoryId: cat.id,
+      averageScore: avg,
+      questionCount: scores.length,
+      minScore: Math.min(...scores),
+      maxScore: Math.max(...scores),
+    });
+    if (cat.sectionOrder === 1) selfScores.push(avg);
+    else orgScores.push(avg);
+  }
+  return { categoryScoresData, selfScores, orgScores };
+}

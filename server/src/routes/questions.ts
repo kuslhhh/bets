@@ -143,8 +143,8 @@ questions.patch("/:id", requirePermission("questions.manage"), async (c) => {
   const hasResp = await hasResponses(id);
 
   // Frozen checks: on PUBLISHED, structural changes not allowed
+  // (type is not in the patch schema, so retype is impossible by construction)
   if (isPublished) {
-    const wantsTypeChange = false; // type not in patch schema, so not allowed anyway
     const wantsOptionsChange = parsed.data.options !== undefined;
     const wantsCategoryChange = parsed.data.categoryId !== undefined && parsed.data.categoryId !== existing.categoryId;
     if (wantsOptionsChange || wantsCategoryChange) {
@@ -178,20 +178,51 @@ questions.patch("/:id", requirePermission("questions.manage"), async (c) => {
 
   let updated;
   if (parsed.data.options !== undefined) {
-    // Replace options: delete missing, upsert provided
+    // Diff options so existing response references stay valid (no delete-all):
+    // match incoming to existing by id, then by label; update matched,
+    // create new, delete only unreferenced options missing from incoming.
     const incoming = parsed.data.options;
-    // Delete options not in incoming (by id or label)
-    const incomingIds = new Set(incoming.filter((o) => o.id).map((o) => o.id as string));
-    const toDelete = existing.options.filter((o) => !incomingIds.has(o.id) && !incoming.some((i) => i.label === o.label));
-    // Simpler: delete all and recreate when structural change allowed (only DRAFT)
-    await prisma.questionOption.deleteMany({ where: { questionId: id } });
-    updated = await prisma.question.update({
-      where: { id },
-      data: {
-        ...updateData,
-        options: { create: incoming.map((o) => ({ label: o.label, optionText: o.optionText, scoreValue: o.scoreValue, order: o.order })) },
-      },
-      include: { options: true },
+    const labels = incoming.map((o) => o.label);
+    if (new Set(labels).size !== labels.length) {
+      return badRequest(c, "duplicate option labels");
+    }
+    const existingById = new Map(existing.options.map((o) => [o.id, o]));
+    const existingByLabel = new Map(existing.options.map((o) => [o.label, o]));
+    const matchedIds = new Set<string>();
+    const toUpdate: { id: string; label: string; optionText: string; scoreValue: number; order: number }[] = [];
+    const toCreate: { label: string; optionText: string; scoreValue: number; order: number }[] = [];
+    for (const o of incoming) {
+      const match = (o.id && existingById.get(o.id)) || existingByLabel.get(o.label);
+      if (match) {
+        matchedIds.add(match.id);
+        toUpdate.push({ id: match.id, label: o.label, optionText: o.optionText, scoreValue: o.scoreValue, order: o.order });
+      } else {
+        toCreate.push({ label: o.label, optionText: o.optionText, scoreValue: o.scoreValue, order: o.order });
+      }
+    }
+    const toDelete = existing.options.filter((o) => !matchedIds.has(o.id));
+    if (toDelete.length > 0) {
+      const referenced = await prisma.response.count({
+        where: { questionId: id, questionOptionId: { in: toDelete.map((o) => o.id) } },
+      });
+      if (referenced > 0) {
+        return conflict(c, "cannot remove options that existing responses reference (deprecate the question instead)");
+      }
+    }
+    updated = await prisma.$transaction(async (tx) => {
+      if (toDelete.length > 0) {
+        await tx.questionOption.deleteMany({ where: { id: { in: toDelete.map((o) => o.id) } } });
+      }
+      for (const u of toUpdate) {
+        await tx.questionOption.update({
+          where: { id: u.id },
+          data: { label: u.label, optionText: u.optionText, scoreValue: u.scoreValue, order: u.order },
+        });
+      }
+      if (toCreate.length > 0) {
+        await tx.questionOption.createMany({ data: toCreate.map((o) => ({ questionId: id, ...o })) });
+      }
+      return tx.question.update({ where: { id }, data: updateData, include: { options: true } });
     });
   } else {
     updated = await prisma.question.update({ where: { id }, data: updateData, include: { options: true } });

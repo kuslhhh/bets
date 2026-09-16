@@ -1,7 +1,6 @@
 import { Hono } from "hono";
 import { createHash, randomBytes } from "node:crypto";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
-import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import {
@@ -16,6 +15,7 @@ import { sendPasswordResetEmail, PASSWORD_RESET_TOKEN_TTL_MINUTES } from "../lib
 import { mintAccessJWT } from "../lib/jwt";
 import { badRequest, conflict, unauthenticated, locked, zodDetails } from "../lib/errors";
 import { rateLimit } from "../lib/rate-limit";
+import { passwordSchema, hashPassword, verifyPassword } from "../lib/password";
 
 export const auth = new Hono();
 
@@ -25,12 +25,14 @@ const LOCKOUT_MINUTES = 15;
 const registerSchema = z.object({
   name: z.string().min(1).max(200),
   email: z.string().email().max(254),
-  password: z
-    .string()
-    .min(8)
-    .regex(/[A-Z]/, "must contain an uppercase letter")
-    .regex(/[a-z]/, "must contain a lowercase letter")
-    .regex(/[0-9]/, "must contain a digit"),
+  password: passwordSchema,
+  phoneNumber: z.string().max(20).optional().nullable(),
+  designation: z.string().max(100).optional().nullable(),
+  companyName: z.string().max(200).optional().nullable(),
+  industryType: z.string().max(100).optional().nullable(),
+  natureOfWork: z.string().max(100).optional().nullable(),
+  revenueBracket: z.string().max(50).optional().nullable(),
+  product: z.string().max(200).optional().nullable(),
 });
 
 auth.post("/register", rateLimit({ windowMs: 60_000, max: 20, keyPrefix: "register" }), async (c) => {
@@ -38,7 +40,7 @@ auth.post("/register", rateLimit({ windowMs: 60_000, max: 20, keyPrefix: "regist
   if (!parsed.success) return badRequest(c, zodDetails(parsed.error));
 
   const email = parsed.data.email.toLowerCase().trim();
-  const { name, password } = parsed.data;
+  const { name, password, phoneNumber, designation, companyName, industryType, natureOfWork, revenueBracket, product } = parsed.data;
 
   const exists = await prisma.user.findUnique({ where: { email } });
   if (exists) return conflict(c, "email already exists");
@@ -46,9 +48,21 @@ auth.post("/register", rateLimit({ windowMs: 60_000, max: 20, keyPrefix: "regist
   const role = await prisma.role.findUnique({ where: { code: "USER" } });
   if (!role) return badRequest(c, "USER role not found — run migrations");
 
-  const passwordHash = await bcrypt.hash(password, 12);
+  const passwordHash = await hashPassword(password);
   const user = await prisma.user.create({
-    data: { name, email, passwordHash, roleId: role.id },
+    data: {
+      name,
+      email,
+      passwordHash,
+      roleId: role.id,
+      phoneNumber: phoneNumber?.trim() ? phoneNumber.trim() : null,
+      designation: designation?.trim() ? designation.trim() : null,
+      companyName: companyName?.trim() ? companyName.trim() : null,
+      industryType: industryType?.trim() ? industryType.trim() : null,
+      natureOfWork: natureOfWork?.trim() ? natureOfWork.trim() : null,
+      revenueBracket: revenueBracket?.trim() ? revenueBracket.trim() : null,
+      product: product?.trim() ? product.trim() : null,
+    },
     select: { id: true, name: true, email: true, createdAt: true, role: { select: { code: true } } },
   });
 
@@ -80,7 +94,7 @@ auth.post("/login", rateLimit({ windowMs: 60_000, max: 10, keyPrefix: "login" })
   if (!user || !user.isActive) return unauthenticated(c);
   if (user.lockedUntil && user.lockedUntil > new Date()) return locked(c);
 
-  const valid = await bcrypt.compare(parsed.data.password, user.passwordHash);
+  const valid = await verifyPassword(parsed.data.password, user.passwordHash);
   if (!valid) {
     const attempts = user.failedLoginAttempts + 1;
     const lock = attempts >= MAX_FAILED_ATTEMPTS;
@@ -153,12 +167,7 @@ auth.get("/me", async (c) => {
 
 const changePasswordSchema = z.object({
   currentPassword: z.string().min(1),
-  newPassword: z
-    .string()
-    .min(8)
-    .regex(/[A-Z]/, "must contain an uppercase letter")
-    .regex(/[a-z]/, "must contain a lowercase letter")
-    .regex(/[0-9]/, "must contain a digit"),
+  newPassword: passwordSchema,
 });
 
 auth.post("/password", async (c) => {
@@ -171,10 +180,10 @@ auth.post("/password", async (c) => {
   const record = await prisma.user.findUnique({ where: { id: user.id } });
   if (!record) return unauthenticated(c);
 
-  const valid = await bcrypt.compare(parsed.data.currentPassword, record.passwordHash);
+  const valid = await verifyPassword(parsed.data.currentPassword, record.passwordHash);
   if (!valid) return unauthenticated(c);
 
-  const passwordHash = await bcrypt.hash(parsed.data.newPassword, 12);
+  const passwordHash = await hashPassword(parsed.data.newPassword);
   const currentToken = c.req.header("cookie")?.match(/fa_session=([^;]+)/)?.[1];
   await prisma.$transaction(async (tx) => {
     await tx.user.update({ where: { id: user.id }, data: { passwordHash } });
@@ -219,12 +228,7 @@ auth.post("/forgot-password", rateLimit({ windowMs: 60_000, max: 5, keyPrefix: "
 
 const resetPasswordSchema = z.object({
   token: z.string().min(10),
-  newPassword: z
-    .string()
-    .min(8)
-    .regex(/[A-Z]/, "must contain an uppercase letter")
-    .regex(/[a-z]/, "must contain a lowercase letter")
-    .regex(/[0-9]/, "must contain a digit"),
+  newPassword: passwordSchema,
 });
 
 auth.post("/reset-password", rateLimit({ windowMs: 60_000, max: 5, keyPrefix: "reset" }), async (c) => {
@@ -243,7 +247,7 @@ auth.post("/reset-password", rateLimit({ windowMs: 60_000, max: 5, keyPrefix: "r
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user) return badRequest(c, "invalid or expired reset token");
 
-  const passwordHash = await bcrypt.hash(newPassword, 12);
+  const passwordHash = await hashPassword(newPassword);
   await prisma.$transaction([
     prisma.user.update({
       where: { id: user.id },

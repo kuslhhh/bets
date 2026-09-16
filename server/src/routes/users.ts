@@ -1,15 +1,18 @@
 import { Hono } from "hono";
-import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
-import { getAuthUser, requirePermission, revokeAllSessionsForUser } from "../lib/auth";
+import { requirePermission, revokeAllSessionsForUser } from "../lib/auth";
 import { audit } from "../lib/audit";
-import { badRequest, conflict, forbidden, notFound, unauthenticated, zodDetails } from "../lib/errors";
+import { badRequest, conflict, notFound, zodDetails } from "../lib/errors";
+import { parsePagination } from "../lib/pagination";
+import { passwordSchema, hashPassword } from "../lib/password";
 
 export const users = new Hono();
 
-// GET /api/roles — must be before /:id
-users.get("/roles", requirePermission("users.view"), async (c) => {
+// Shared catalogue handlers — single implementation used by both
+// /api/users/roles|permissions and the spec aliases /api/roles|permissions
+// (mounted in app.ts). Keeps both URLs without duplicating queries.
+export async function handleListRoles(c: import("hono").Context) {
   const roles = await prisma.role.findMany({
     include: { rolePermissions: { include: { permission: true } } },
     orderBy: { code: "asc" },
@@ -22,12 +25,17 @@ users.get("/roles", requirePermission("users.view"), async (c) => {
     permissions: r.rolePermissions.map((rp: any) => rp.permission.code),
   }));
   return c.json({ roles: data });
-});
+}
 
-users.get("/permissions", requirePermission("users.view"), async (c) => {
+export async function handleListPermissions(c: import("hono").Context) {
   const permissions = await prisma.permission.findMany({ orderBy: { code: "asc" } });
   return c.json({ permissions });
-});
+}
+
+// GET /api/roles — must be before /:id
+users.get("/roles", requirePermission("users.view"), handleListRoles);
+
+users.get("/permissions", requirePermission("users.view"), handleListPermissions);
 
 // GET /api/users — paginated q/role/isActive
 users.get("/", requirePermission("users.view"), async (c) => {
@@ -35,10 +43,7 @@ users.get("/", requirePermission("users.view"), async (c) => {
   const q = url.searchParams.get("q")?.trim() ?? null;
   const role = url.searchParams.get("role")?.trim() ?? null;
   const isActiveParam = url.searchParams.get("isActive");
-  const pageRaw = Number(url.searchParams.get("page") ?? 1);
-  const page = Number.isNaN(pageRaw) ? 1 : Math.max(1, pageRaw);
-  const pageSizeRaw = Number(url.searchParams.get("pageSize") ?? 20);
-  const pageSize = Number.isNaN(pageSizeRaw) ? 20 : Math.min(100, Math.max(1, pageSizeRaw));
+  const { page, pageSize } = parsePagination(url);
 
   const where: Record<string, unknown> = {};
   if (q) (where as any).OR = [{ name: { contains: q, mode: "insensitive" } }, { email: { contains: q, mode: "insensitive" } }];
@@ -55,7 +60,22 @@ users.get("/", requirePermission("users.view"), async (c) => {
       orderBy: { createdAt: "desc" },
       skip: (page - 1) * pageSize,
       take: pageSize,
-      select: { id: true, name: true, email: true, isActive: true, createdAt: true, updatedAt: true, role: { select: { code: true, name: true } } },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        isActive: true,
+        createdAt: true,
+        updatedAt: true,
+        role: { select: { code: true, name: true } },
+        phoneNumber: true,
+        designation: true,
+        companyName: true,
+        industryType: true,
+        natureOfWork: true,
+        revenueBracket: true,
+        product: true,
+      },
     }),
   ]);
   return c.json({ data, page, pageSize, total });
@@ -66,12 +86,7 @@ const createUserSchema = z.object({
   name: z.string().min(1).max(200),
   email: z.string().email().max(254),
   roleCode: z.string().min(1).max(50),
-  password: z
-    .string()
-    .min(8)
-    .regex(/[A-Z]/, "must contain an uppercase letter")
-    .regex(/[a-z]/, "must contain a lowercase letter")
-    .regex(/[0-9]/, "must contain a digit"),
+  password: passwordSchema,
 });
 
 users.post("/", requirePermission("users.manage"), async (c) => {
@@ -87,7 +102,7 @@ users.post("/", requirePermission("users.manage"), async (c) => {
   const exists = await prisma.user.findUnique({ where: { email } });
   if (exists) return conflict(c, "email already exists");
 
-  const passwordHash = await bcrypt.hash(password, 12);
+  const passwordHash = await hashPassword(password);
   const user = await prisma.user.create({
     data: { name, email, passwordHash, roleId: role.id },
     select: {
@@ -117,7 +132,22 @@ users.get("/:id", requirePermission("users.view"), async (c) => {
   const id = c.req.param("id");
   const user = await prisma.user.findUnique({
     where: { id },
-    select: { id: true, name: true, email: true, isActive: true, createdAt: true, updatedAt: true, role: { select: { code: true, name: true } } },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      isActive: true,
+      createdAt: true,
+      updatedAt: true,
+      role: { select: { code: true, name: true } },
+      phoneNumber: true,
+      designation: true,
+      companyName: true,
+      industryType: true,
+      natureOfWork: true,
+      revenueBracket: true,
+      product: true,
+    },
   });
   if (!user) return notFound(c);
   // optional assignments summary for admin
@@ -130,19 +160,37 @@ users.get("/:id", requirePermission("users.view"), async (c) => {
   return c.json({ user: { ...user, assignmentsSummary: summary } });
 });
 
-// PATCH /api/users/:id — update name/email/isActive
+// PATCH /api/users/:id — update name/email/isActive + profile fields
 const patchUserSchema = z.object({
   name: z.string().min(1).max(200).optional(),
   email: z.string().email().max(254).optional(),
   isActive: z.boolean().optional(),
+  phoneNumber: z.string().max(20).optional().nullable(),
+  designation: z.string().max(100).optional().nullable(),
+  companyName: z.string().max(200).optional().nullable(),
+  industryType: z.string().max(100).optional().nullable(),
+  natureOfWork: z.string().max(100).optional().nullable(),
+  revenueBracket: z.string().max(50).optional().nullable(),
+  product: z.string().max(200).optional().nullable(),
 });
 
 users.patch("/:id", requirePermission("users.manage"), async (c) => {
   const id = c.req.param("id");
   const parsed = patchUserSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return badRequest(c, zodDetails(parsed.error));
-  if (parsed.data.name === undefined && parsed.data.email === undefined && parsed.data.isActive === undefined)
-    return badRequest(c, "at least one of name/email/isActive required");
+  if (
+    parsed.data.name === undefined &&
+    parsed.data.email === undefined &&
+    parsed.data.isActive === undefined &&
+    parsed.data.phoneNumber === undefined &&
+    parsed.data.designation === undefined &&
+    parsed.data.companyName === undefined &&
+    parsed.data.industryType === undefined &&
+    parsed.data.natureOfWork === undefined &&
+    parsed.data.revenueBracket === undefined &&
+    parsed.data.product === undefined
+  )
+    return badRequest(c, "at least one field required");
 
   const existing = await prisma.user.findUnique({ where: { id } });
   if (!existing) return notFound(c);
@@ -158,11 +206,33 @@ users.patch("/:id", requirePermission("users.manage"), async (c) => {
     data.email = email;
   }
   if (parsed.data.isActive !== undefined) data.isActive = parsed.data.isActive;
+  if (parsed.data.phoneNumber !== undefined) data.phoneNumber = parsed.data.phoneNumber?.trim() || null;
+  if (parsed.data.designation !== undefined) data.designation = parsed.data.designation?.trim() || null;
+  if (parsed.data.companyName !== undefined) data.companyName = parsed.data.companyName?.trim() || null;
+  if (parsed.data.industryType !== undefined) data.industryType = parsed.data.industryType?.trim() || null;
+  if (parsed.data.natureOfWork !== undefined) data.natureOfWork = parsed.data.natureOfWork?.trim() || null;
+  if (parsed.data.revenueBracket !== undefined) data.revenueBracket = parsed.data.revenueBracket?.trim() || null;
+  if (parsed.data.product !== undefined) data.product = parsed.data.product?.trim() || null;
 
   const updated = await prisma.user.update({
     where: { id },
     data,
-    select: { id: true, name: true, email: true, isActive: true, createdAt: true, updatedAt: true, role: { select: { code: true, name: true } } },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      isActive: true,
+      createdAt: true,
+      updatedAt: true,
+      role: { select: { code: true, name: true } },
+      phoneNumber: true,
+      designation: true,
+      companyName: true,
+      industryType: true,
+      natureOfWork: true,
+      revenueBracket: true,
+      product: true,
+    },
   });
 
   if (parsed.data.isActive === false) {
@@ -195,19 +265,16 @@ users.delete("/:id", requirePermission("users.manage"), async (c) => {
 });
 
 async function hasUserHistory(userId: string): Promise<boolean> {
-  const [aCount, auditCount] = await Promise.all([
-    prisma.assessmentAssignment.count({ where: { userId } }),
-    prisma.auditLog.count({ where: { actorId: userId } }),
+  // Existence-style checks (take:1) — was 4 sequential counts + full id load.
+  // Responses/textAnswers can't outlive their assignment (CASCADE), and
+  // assignments can't outlive their user (RESTRICT), so an assignment row
+  // alone proves answer history — no need to count answer tables.
+  const [assignment, log] = await Promise.all([
+    prisma.assessmentAssignment.findFirst({ where: { userId }, select: { id: true } }),
+    prisma.auditLog.findFirst({ where: { actorId: userId }, select: { id: true } }),
   ]);
-  if (aCount > 0 || auditCount > 0) return true;
-  // Check responses via assignments
-  const assignments = await prisma.assessmentAssignment.findMany({ where: { userId }, select: { id: true } });
-  if (assignments.length === 0) return false;
-  const ids = assignments.map((a) => a.id);
-  const rCount = await prisma.response.count({ where: { assignmentId: { in: ids } } });
-  if (rCount > 0) return true;
-  const tCount = await prisma.textAnswer.count({ where: { assignmentId: { in: ids } } });
-  return tCount > 0;
+  if (assignment || log) return true;
+  return false;
 }
 
 // PATCH /api/users/:id/role — change role
