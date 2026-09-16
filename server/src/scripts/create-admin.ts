@@ -7,7 +7,7 @@
 //
 // Falls back to ADMIN_EMAIL / ADMIN_PASSWORD env vars when args are omitted.
 
-import bcrypt from "bcryptjs";
+import { hashPassword } from "../lib/password";
 import { prisma } from "../lib/prisma";
 
 const email = (process.argv[2] ?? process.env.ADMIN_EMAIL ?? "").toLowerCase().trim();
@@ -27,7 +27,7 @@ async function main() {
     throw new Error("ADMIN role not found — has migration 0002_baseline_content been applied?");
   }
 
-  const hash = await bcrypt.hash(password, 12);
+  const hash = await hashPassword(password);
   const user = await prisma.user.upsert({
     where: { email },
     update: { passwordHash: hash, roleId: adminRole.id, isActive: true },

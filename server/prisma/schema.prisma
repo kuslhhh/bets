@@ -56,6 +56,13 @@ model User {
   failedLoginAttempts Int       @default(0) @map("failed_login_attempts")
   lockedUntil         DateTime? @map("locked_until")
   lastLoginAt         DateTime? @map("last_login_at")
+  phoneNumber         String?   @map("phone_number") @db.VarChar(20)
+  designation         String?   @map("designation") @db.VarChar(100)
+  companyName         String?   @map("company_name") @db.VarChar(200)
+  industryType        String?   @map("industry_type") @db.VarChar(100)
+  natureOfWork        String?   @map("nature_of_work") @db.VarChar(100)
+  revenueBracket      String?   @map("revenue_bracket") @db.VarChar(50)
+  product             String?   @map("product") @db.VarChar(200)
   createdAt           DateTime  @default(now()) @map("created_at")
   updatedAt           DateTime  @updatedAt @map("updated_at")
 
