@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import { getAppUrl, getSmtpConfig, isSmtpConfigured } from "./config";
 
 // Generic SMTP via Nodemailer. If SMTP_HOST unset, log to console (dev).
 
@@ -28,24 +29,16 @@ export function passwordResetEmail(to: string, resetLink: string): MailMessage {
 }
 
 export function passwordResetLink(token: string): string {
-  const appUrl = (process.env.APP_URL ?? "http://localhost:5173").replace(/\/$/, "");
-  return `${appUrl}/reset-password?token=${encodeURIComponent(token)}`;
-}
-
-function isSmtpConfigured(): boolean {
-  return Boolean(process.env.SMTP_HOST);
+  return `${getAppUrl()}/reset-password?token=${encodeURIComponent(token)}`;
 }
 
 function getTransporter() {
-  const port = Number(process.env.SMTP_PORT ?? 587);
+  const smtp = getSmtpConfig();
   return nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port,
-    secure: process.env.SMTP_SECURE === "true" || port === 465,
-    auth:
-      process.env.SMTP_USER && process.env.SMTP_PASS
-        ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
-        : undefined,
+    host: smtp.host,
+    port: smtp.port,
+    secure: smtp.secure,
+    auth: smtp.user && smtp.pass ? { user: smtp.user, pass: smtp.pass } : undefined,
   });
 }
 
@@ -59,7 +52,7 @@ export async function sendMail(message: MailMessage): Promise<{ delivered: boole
     return { delivered: false };
   }
   await getTransporter().sendMail({
-    from: process.env.SMTP_FROM ?? "no-reply@localhost",
+    from: getSmtpConfig().from,
     ...message,
   });
   return { delivered: true };

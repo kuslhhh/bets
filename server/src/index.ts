@@ -1,6 +1,7 @@
 import app from "./app";
+import { getPort } from "./lib/config";
 
-const port = Number(process.env.PORT ?? 3000);
+const port = getPort(3000);
 
 export default {
   port,

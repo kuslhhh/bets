@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { getCookie } from "hono/cookie";
 import type { MiddlewareHandler } from "hono";
 import { prisma } from "./prisma";
-import { unauthenticated, forbidden, notFound } from "./errors";
+import { unauthenticated, forbidden } from "./errors";
 import { verifyAccessJWT } from "./jwt";
 import type { AuthUser } from "@/types/contract";
 
@@ -73,12 +73,20 @@ export async function getAuthUser(c: import("hono").Context): Promise<AuthUser |
   if (bearer) {
     const claims = await verifyAccessJWT(bearer);
     if (claims) {
+      // Re-resolve role/permissions from the DB so role changes and
+      // deactivation take effect without waiting for JWT expiry.
+      // (The JWT remains a 1h identity hint; the DB is authoritative.)
+      const fresh = await prisma.user.findUnique({
+        where: { id: claims.id },
+        include: { role: { include: { rolePermissions: { include: { permission: true } } } } },
+      });
+      if (!fresh || !fresh.isActive) return null;
       return {
-        id: claims.id,
-        email: claims.email,
-        name: claims.name,
-        roleCode: claims.role,
-        permissions: claims.permissions,
+        id: fresh.id,
+        email: fresh.email,
+        name: fresh.name,
+        roleCode: fresh.role.code,
+        permissions: fresh.role.rolePermissions.map((rp) => rp.permission.code),
       };
     }
   }
@@ -86,14 +94,6 @@ export async function getAuthUser(c: import("hono").Context): Promise<AuthUser |
   if (!token) return null;
   return getSessionUser(token);
 }
-
-/** Require a valid session; sets c.set("user"). 401 otherwise. */
-export const requireSession: MiddlewareHandler = async (c, next) => {
-  const user = await getAuthUser(c);
-  if (!user) return unauthenticated(c);
-  c.set("user", user);
-  await next();
-};
 
 /** Require a valid session AND a specific permission code. */
 export function requirePermission(code: string): MiddlewareHandler {
@@ -105,25 +105,3 @@ export function requirePermission(code: string): MiddlewareHandler {
     await next();
   };
 }
-
-// --- Scope helpers ---
-
-export async function ownsAssignment(userId: string, assignmentId: string): Promise<boolean> {
-  const a = await prisma.assessmentAssignment.findUnique({
-    where: { id: assignmentId },
-    select: { userId: true },
-  });
-  return a?.userId === userId;
-}
-
-export async function canViewResult(viewer: AuthUser, assignmentId: string): Promise<boolean> {
-  const result = await prisma.assessmentResult.findUnique({
-    where: { assignmentId },
-    select: { assignment: { select: { userId: true } } },
-  });
-  if (!result) return false;
-  if (result.assignment.userId === viewer.id) return viewer.permissions.includes("results.self.view");
-  return viewer.permissions.includes("results.individual.view");
-}
-
-export { notFound };
