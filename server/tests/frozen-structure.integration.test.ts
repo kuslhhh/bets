@@ -1,7 +1,17 @@
-import { describe, it, expect } from "vitest";
-import { prisma } from "../src/lib/prisma";
+// Integration: frozen-structure + score snapshots. Requires TEST_DATABASE_URL.
+import { describe, it, expect, beforeAll } from "vitest";
+import { getTestDbStatus } from "./helpers";
 
-describe("frozen structure", () => {
+const { hasDb, ci } = getTestDbStatus();
+if (!hasDb && ci) throw new Error("TEST_DATABASE_URL is required in CI — integration tests must run against the isolated finance_test database");
+
+describe.runIf(hasDb)("frozen structure (integration)", () => {
+  let prisma: typeof import("../src/lib/prisma").prisma;
+
+  beforeAll(async () => {
+    ({ prisma } = await import("../src/lib/prisma"));
+  });
+
   it("PUBLISHED assessment rejects structural changes", async () => {
     // Use existing test assessment that is PUBLISHED
     const assessment = await prisma.assessment.findFirst({ where: { status: "PUBLISHED" } });
