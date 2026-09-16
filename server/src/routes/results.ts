@@ -14,7 +14,7 @@ results.get("/:assignmentId", async (c) => {
   const assignmentId = c.req.param("assignmentId");
   const result = await prisma.assessmentResult.findUnique({
     where: { assignmentId },
-    include: { assignment: { select: { userId: true } }, categoryScores: { include: { category: true } } },
+    include: { assignment: { select: { userId: true } }, categoryScores: { include: { category: { include: { section: true } } } } },
   });
   if (!result) return notFound(c);
   const isOwner = result.assignment.userId === user.id;
@@ -31,10 +31,12 @@ results.get("/:assignmentId", async (c) => {
   const categories = result.categoryScores.map((cs: any) => ({
     id: cs.categoryId,
     name: cs.category.name,
+    sectionOrder: cs.category.section.order,
+    sectionTitle: cs.category.section.title,
     averageScore: Number(cs.averageScore),
     questionCount: cs.questionCount,
-    minScore: cs.minScore ? Number(cs.minScore) : null,
-    maxScore: cs.maxScore ? Number(cs.maxScore) : null,
+    minScore: cs.minScore != null ? Number(cs.minScore) : null,
+    maxScore: cs.maxScore != null ? Number(cs.maxScore) : null,
     band: getBand(Number(cs.averageScore)),
     expected: EXPECTED,
   }));

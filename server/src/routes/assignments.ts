@@ -11,6 +11,7 @@ import { parsePagination } from "../lib/pagination";
 import {
   ServiceError,
   getProgress,
+  getRetakeStatus,
   resolveAssignment,
   startByAssessment,
   startByAssignment,
@@ -92,6 +93,24 @@ assignments.get("/assignments/:id", async (c) => {
   ]);
 
   return c.json({ assignment, questions: sanitized, drafts: { responses, textAnswers } });
+});
+
+// GET /api/assessments/:id/eligibility — 45-day retake status for self-serve gateway
+assignments.get("/assessments/:id/eligibility", async (c) => {
+  const user = await getAuthUser(c);
+  if (!user) return unauthenticated(c);
+  if (!canRespond(user)) return notFound(c);
+  const assessmentId = c.req.param("id");
+  const assessment = await prisma.assessment.findUnique({ where: { id: assessmentId } });
+  if (!assessment) return notFound(c);
+  if (assessment.status !== "PUBLISHED") return conflict(c, "assessment not published");
+  const active = await prisma.assessmentAssignment.findFirst({
+    where: { assessmentId, userId: user.id, status: { in: ["ASSIGNED", "IN_PROGRESS"] } },
+    select: { id: true, status: true },
+  });
+  if (active) return c.json({ eligible: true, hasActive: true, assignmentId: active.id, status: active.status });
+  const status = await getRetakeStatus(user.id, assessmentId);
+  return c.json({ ...status, hasActive: false });
 });
 
 // POST /api/assessments/:id/start (self-serve auto-create)

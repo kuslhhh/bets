@@ -68,10 +68,56 @@ export async function getProgress(assignmentId: string, assessmentId: string): P
 
 // --- Assignment lifecycle ---
 
+export const RETAKE_COOLDOWN_DAYS = 45;
+const RETAKE_COOLDOWN_MS = RETAKE_COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
+
+export interface CooldownStatus {
+  eligible: boolean;
+  nextEligibleAt: string | null;
+  daysRemaining: number;
+  latestAssignmentId: string | null;
+}
+
+export function cooldownFromSubmittedAt(submittedAt: Date | string | null, nowMs = Date.now()): Omit<CooldownStatus, "latestAssignmentId"> {
+  if (!submittedAt) return { eligible: true, nextEligibleAt: null, daysRemaining: 0 };
+  const submittedMs = new Date(submittedAt).getTime();
+  const nextMs = submittedMs + RETAKE_COOLDOWN_MS;
+  const remaining = nextMs - nowMs;
+  if (remaining <= 0) return { eligible: true, nextEligibleAt: null, daysRemaining: 0 };
+  return {
+    eligible: false,
+    nextEligibleAt: new Date(nextMs).toISOString(),
+    daysRemaining: Math.ceil(remaining / (24 * 60 * 60 * 1000)),
+  };
+}
+
 type ActiveAssignment = Awaited<ReturnType<typeof prisma.assessmentAssignment.findFirst>>;
 
 function isPrismaUniqueViolation(err: unknown): boolean {
   return Boolean(err && typeof err === "object" && (err as { code?: string }).code === "P2002");
+}
+
+export async function getRetakeStatus(userId: string, assessmentId: string, nowMs = Date.now()): Promise<CooldownStatus> {
+  const lastSubmitted = await prisma.assessmentAssignment.findFirst({
+    where: { assessmentId, userId, status: "SUBMITTED" },
+    orderBy: { submittedAt: "desc" },
+    select: { id: true, submittedAt: true },
+  });
+  const cd = cooldownFromSubmittedAt(lastSubmitted?.submittedAt ?? null, nowMs);
+  return { ...cd, latestAssignmentId: lastSubmitted?.id ?? null };
+}
+
+async function assertRetakeEligible(userId: string, assessmentId: string): Promise<void> {
+  const status = await getRetakeStatus(userId, assessmentId);
+  if (!status.eligible) {
+    throw conflictError({
+      code: "COOLDOWN",
+      message: `Next attempt available in ${status.daysRemaining} day(s)`,
+      nextEligibleAt: status.nextEligibleAt,
+      daysRemaining: status.daysRemaining,
+      latestAssignmentId: status.latestAssignmentId,
+    });
+  }
 }
 
 export async function ensureActiveAssignment(userId: string, assessmentId: string) {
@@ -79,6 +125,7 @@ export async function ensureActiveAssignment(userId: string, assessmentId: strin
     where: { assessmentId, userId, status: { in: ["ASSIGNED", "IN_PROGRESS"] } },
   });
   if (active) return active;
+  await assertRetakeEligible(userId, assessmentId);
   const latest = await prisma.assessmentAssignment.findMany({
     where: { assessmentId, userId },
     orderBy: { attempt: "desc" },

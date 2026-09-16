@@ -2,7 +2,7 @@
 // The breakdown lives in lib/scoring/engine.ts so it stays importable
 // without a database connection.
 import { describe, it, expect } from "vitest";
-import { computeCategoryBreakdown } from "../src/lib/scoring/engine";
+import { computeCategoryBreakdown, computeOverallSplit } from "../src/lib/scoring/engine";
 
 describe("computeCategoryBreakdown", () => {
   const cats = [
@@ -44,5 +44,55 @@ describe("computeCategoryBreakdown", () => {
       ]),
     );
     expect(categoryScoresData.map((c) => c.categoryId)).toEqual(["c1", "c2", "c3"]);
+  });
+
+  it("matches Excel: overall averages full-precision means (Finance 2/2/3 split)", () => {
+    // Five categories at 100 + Org Decision [100,50,50] = 200/3.
+    // Excel: combined = (500 + 200/3)/6 = 94.4444… → 94.44.
+    // Averaging the rounded 66.67 would give 94.45 — the old behaviour.
+    const financeCats = [
+      { id: "s1k", sectionOrder: 1 },
+      { id: "s1t", sectionOrder: 1 },
+      { id: "s1d", sectionOrder: 1 },
+      { id: "s2k", sectionOrder: 2 },
+      { id: "s2t", sectionOrder: 2 },
+      { id: "s2d", sectionOrder: 2 },
+    ];
+    const financeRequired = [
+      { id: "a1", categoryId: "s1k" },
+      { id: "a2", categoryId: "s1k" },
+      { id: "a3", categoryId: "s1t" },
+      { id: "a4", categoryId: "s1t" },
+      { id: "a5", categoryId: "s1d" },
+      { id: "a6", categoryId: "s1d" },
+      { id: "a7", categoryId: "s1d" },
+      { id: "b1", categoryId: "s2k" },
+      { id: "b2", categoryId: "s2k" },
+      { id: "b3", categoryId: "s2t" },
+      { id: "b4", categoryId: "s2t" },
+      { id: "b5", categoryId: "s2d" },
+      { id: "b6", categoryId: "s2d" },
+      { id: "b7", categoryId: "s2d" },
+    ];
+    const entries: [string, number][] = financeRequired.map((q) => [q.id, 100]);
+    entries.find((e) => e[0] === "b6")![1] = 50;
+    entries.find((e) => e[0] === "b7")![1] = 50;
+    const { categoryScoresData, selfScores, orgScores } = computeCategoryBreakdown(
+      financeCats,
+      financeRequired,
+      new Map(entries),
+    );
+    expect(categoryScoresData.find((c) => c.categoryId === "s2d")).toMatchObject({
+      averageScore: 66.67,
+      questionCount: 3,
+      minScore: 50,
+      maxScore: 100,
+    });
+    const overall = computeOverallSplit(selfScores, orgScores);
+    expect(overall.overallSelf).toBe(100);
+    expect(overall.overallOrg).toBeCloseTo(88.89, 2);
+    expect(overall.overallCombined).toBe(94.44);
+    expect(overall.minCategoryScore).toBe(66.67);
+    expect(overall.maxCategoryScore).toBe(100);
   });
 });

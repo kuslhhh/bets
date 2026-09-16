@@ -4,6 +4,10 @@ export function avg2(values: number[]): number {
   return Math.round(avg * 100) / 100;
 }
 
+export function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
 export interface CategoryScoreInput {
   categoryId: string;
   scores: number[]; // question scores in category
@@ -40,7 +44,7 @@ export function computeOverallSplit(selfScores: number[], orgScores: number[]) {
   const overallOrg = avg2(orgScores);
   const overallCombined = avg2([...selfScores, ...orgScores]);
   const all = [...selfScores, ...orgScores];
-  return { overallSelf, overallOrg, overallCombined, minCategoryScore: Math.min(...all), maxCategoryScore: Math.max(...all) };
+  return { overallSelf, overallOrg, overallCombined, minCategoryScore: round2(Math.min(...all)), maxCategoryScore: round2(Math.max(...all)) };
 }
 
 export interface CategoryBreakdown {
@@ -68,6 +72,9 @@ export function computeCategoryBreakdown(
     const qIds = questionsByCategory.get(cat.id) ?? [];
     if (qIds.length === 0) continue;
     const scores = qIds.map((qid) => scoreByQuestion.get(qid)!);
+    // Excel-faithful: overall averages the full-precision category means
+    // (Excel rounds display only); persistence stays 2dp via avg2.
+    const exact = scores.reduce((a, b) => a + b, 0) / scores.length;
     const avg = avg2(scores);
     categoryScoresData.push({
       categoryId: cat.id,
@@ -76,8 +83,8 @@ export function computeCategoryBreakdown(
       minScore: Math.min(...scores),
       maxScore: Math.max(...scores),
     });
-    if (cat.sectionOrder === 1) selfScores.push(avg);
-    else orgScores.push(avg);
+    if (cat.sectionOrder === 1) selfScores.push(exact);
+    else orgScores.push(exact);
   }
   return { categoryScoresData, selfScores, orgScores };
 }
