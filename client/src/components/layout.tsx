@@ -41,7 +41,7 @@ export function Layout() {
                   </>
                 )}
                 <span className="ml-2 text-sm text-[var(--bets-text-muted)] hidden sm:inline">
-                  {user.name} · {role}
+                  {user.name}
                 </span>
                 <Button
                   variant="ghost"
@@ -49,7 +49,7 @@ export function Layout() {
                   className="ml-2"
                   onClick={async () => {
                     await logout();
-                    nav("/login");
+                    nav("/");
                   }}
                 >
                   Logout
@@ -57,8 +57,8 @@ export function Layout() {
               </>
             ) : (
               <>
-                <NavItem to="/login" label="Login" />
-                <NavItem to="/register" label="Register" />
+                <NavItem to="/" label="Login" />
+                <NavItem to="/" label="Register" />
               </>
             )}
           </nav>

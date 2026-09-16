@@ -5,7 +5,7 @@ import { useAuth } from "../lib/auth";
 function Protected({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) return <div className="p-8 text-[var(--bets-text-muted)]">Loading…</div>;
-  if (!user) return <Navigate to="/login" replace />;
+  if (!user) return <Navigate to="/" replace />;
   return <>{children}</>;
 }
 function AdminOnly({ children }: { children: React.ReactNode }) {
@@ -15,7 +15,6 @@ function AdminOnly({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-import { LoginPage } from "./Login";
 import { RegisterLandingPage } from "./RegisterLanding";
 import { AvailablePage } from "./Available";
 import { MyAssessmentsPage } from "./MyAssessments";
@@ -32,7 +31,7 @@ export const router = createBrowserRouter([
   {
     element: <Layout />,
     children: [
-      { path: "/login", element: <LoginPage /> },
+      { path: "/login", element: <Navigate to="/" replace /> },
       {
         path: "/available",
         element: (
