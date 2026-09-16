@@ -9,11 +9,29 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ReferenceLine, ResponsiveContaine
 import { betsColors } from "../lib/theme";
 import type { CategoryScore } from "../lib/types";
 
+interface ResultCategory extends CategoryScore {
+  questionCount: number;
+  sectionTitle?: string | null;
+}
+
 type ResultData = {
-  result: { overallSelf: number | null; overallOrg: number | null; overallCombined: number | null; scoringVersion: string };
-  categories: CategoryScore[];
+  result: {
+    overallSelf: number | null;
+    overallOrg: number | null;
+    overallCombined: number | null;
+    minCategoryScore: number | null;
+    maxCategoryScore: number | null;
+    scoringVersion: string;
+  };
+  categories: ResultCategory[];
   expected: number;
 };
+
+const fmt = (n: number | null | undefined) => (n == null ? "—" : n.toFixed(2));
+
+function sectionLabel(order?: number | null) {
+  return order === 1 ? "Self" : order === 2 ? "Org" : null;
+}
 
 export function ResultsPage() {
   const { id } = useParams<{ id: string }>();
@@ -35,6 +53,19 @@ export function ResultsPage() {
 
   const chartData = data.categories.map((c) => ({ name: c.name, score: c.averageScore }));
 
+  // Per-section Mean/Min/Max of category means — Excel H/I/J mirror (display-only).
+  const sectionStats = (order: number) => {
+    const avgs = data.categories.filter((c) => c.sectionOrder === order).map((c) => c.averageScore);
+    if (avgs.length === 0) return null;
+    return {
+      mean: avgs.reduce((a, b) => a + b, 0) / avgs.length,
+      min: Math.min(...avgs),
+      max: Math.max(...avgs),
+    };
+  };
+  const selfStats = sectionStats(1);
+  const orgStats = sectionStats(2);
+
   return (
     <div className="max-w-4xl mx-auto space-y-4">
       <h1 className="text-xl font-bold text-[var(--bets-text-dark)]">Results</h1>
@@ -43,13 +74,55 @@ export function ResultsPage() {
       </div>
 
       <div className="grid md:grid-cols-3 gap-4">
-        <Card><CardHeader><CardTitle className="text-sm text-[var(--bets-text-muted)]">Overall Self</CardTitle></CardHeader><CardContent className="text-2xl font-bold text-[var(--bets-primary)]">{data.result.overallSelf?.toFixed(2) ?? "—"}</CardContent></Card>
-        <Card><CardHeader><CardTitle className="text-sm text-[var(--bets-text-muted)]">Overall Org</CardTitle></CardHeader><CardContent className="text-2xl font-bold text-[var(--bets-primary)]">{data.result.overallOrg?.toFixed(2) ?? "—"}</CardContent></Card>
-        <Card><CardHeader><CardTitle className="text-sm text-[var(--bets-text-muted)]">Combined</CardTitle></CardHeader><CardContent className="text-2xl font-bold text-[var(--bets-text-dark)]">{data.result.overallCombined?.toFixed(2) ?? "—"}</CardContent></Card>
+        <Card>
+          <CardHeader><CardTitle className="text-sm text-[var(--bets-text-muted)]">Overall Self <span className="font-normal">(Mean)</span></CardTitle></CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold text-[var(--bets-primary)]">{fmt(data.result.overallSelf)}</p>
+            <p className="text-xs text-[var(--bets-text-muted)] mt-1">Min {fmt(selfStats?.min)} · Max {fmt(selfStats?.max)}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle className="text-sm text-[var(--bets-text-muted)]">Overall Org <span className="font-normal">(Mean)</span></CardTitle></CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold text-[var(--bets-primary)]">{fmt(data.result.overallOrg)}</p>
+            <p className="text-xs text-[var(--bets-text-muted)] mt-1">Min {fmt(orgStats?.min)} · Max {fmt(orgStats?.max)}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle className="text-sm text-[var(--bets-text-muted)]">Combined <span className="font-normal">(Mean)</span></CardTitle></CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold text-[var(--bets-text-dark)]">{fmt(data.result.overallCombined)}</p>
+            <p className="text-xs text-[var(--bets-text-muted)] mt-1">Min {fmt(data.result.minCategoryScore)} · Max {fmt(data.result.maxCategoryScore)}</p>
+          </CardContent>
+        </Card>
       </div>
 
+      {(selfStats || orgStats) && (
+        <Card>
+          <CardHeader><CardTitle>Section summary <span className="text-xs font-normal text-[var(--bets-text-muted)]">— Mean / Min / Max of category means, as per Excel</span></CardTitle></CardHeader>
+          <CardContent className="space-y-2">
+            {[
+              { label: "Self", stats: selfStats },
+              { label: "Organisation", stats: orgStats },
+            ].map(
+              (row) =>
+                row.stats && (
+                  <div key={row.label} className="flex items-center justify-between border-b border-[var(--color-border)] py-2 last:border-0">
+                    <span className="text-sm font-medium text-[var(--bets-text)]">{row.label}</span>
+                    <span className="flex gap-4 text-sm">
+                      <span className="text-[var(--bets-text-muted)]">Mean <b className="text-[var(--bets-primary)]">{fmt(row.stats.mean)}</b></span>
+                      <span className="text-[var(--bets-text-muted)]">Min <b className="text-[var(--bets-text)]">{fmt(row.stats.min)}</b></span>
+                      <span className="text-[var(--bets-text-muted)]">Max <b className="text-[var(--bets-text)]">{fmt(row.stats.max)}</b></span>
+                    </span>
+                  </div>
+                ),
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
-        <CardHeader><CardTitle>Categories</CardTitle></CardHeader>
+        <CardHeader><CardTitle>Categories <span className="text-xs font-normal text-[var(--bets-text-muted)]">— Mean of question scores</span></CardTitle></CardHeader>
         <CardContent>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
@@ -66,15 +139,22 @@ export function ResultsPage() {
       </Card>
 
       <Card>
-        <CardHeader><CardTitle>Category breakdown</CardTitle></CardHeader>
+        <CardHeader><CardTitle>Category breakdown <span className="text-xs font-normal text-[var(--bets-text-muted)]">— Mean / Min / Max of question scores</span></CardTitle></CardHeader>
         <CardContent className="space-y-2">
           {data.categories.map((c) => {
             const band = getBand(c.averageScore);
+            const tag = sectionLabel(c.sectionOrder);
             return (
-              <div key={c.id} className="flex items-center justify-between border-b border-[var(--color-border)] py-2 last:border-0">
-                <span className="text-sm text-[var(--bets-text)]">{c.name}</span>
-                <span className="flex items-center gap-2">
-                  <span className="text-sm font-semibold text-[var(--bets-primary)]">{c.averageScore.toFixed(2)}</span>
+              <div key={c.id} className="flex items-center justify-between gap-3 border-b border-[var(--color-border)] py-2 last:border-0">
+                <span className="text-sm text-[var(--bets-text)] flex items-center gap-2 min-w-0">
+                  <span className="truncate">{c.name}</span>
+                  {tag && <Badge className="bg-[#f5eefb] text-[var(--bets-primary)] shrink-0">{tag}</Badge>}
+                  <span className="text-xs text-[var(--bets-text-muted)] shrink-0">n={c.questionCount}</span>
+                </span>
+                <span className="flex items-center gap-3 text-sm shrink-0">
+                  <span className="text-[var(--bets-text-muted)]">Mean <b className="text-[var(--bets-primary)]">{fmt(c.averageScore)}</b></span>
+                  <span className="text-[var(--bets-text-muted)]">Min <b className="text-[var(--bets-text)]">{fmt(c.minScore)}</b></span>
+                  <span className="text-[var(--bets-text-muted)]">Max <b className="text-[var(--bets-text)]">{fmt(c.maxScore)}</b></span>
                   <Badge className={band.id === 1 ? "bg-green-50 text-green-700 border-green-200" : band.id === 4 ? "bg-red-50 text-red-700 border-red-200" : "bg-[#f5eefb] text-[var(--bets-primary)]"}>{band.label}</Badge>
                 </span>
               </div>

@@ -1,7 +1,6 @@
 import { Link, useNavigate } from "react-router-dom";
 import { Card, CardHeader, CardTitle, CardContent } from "../components/ui/card";
 import { Button } from "../components/ui/button";
-import { Badge } from "../components/ui/badge";
 import { useAssignment } from "./useAssignment";
 
 export function TakingPage() {
@@ -26,7 +25,6 @@ export function TakingPage() {
     doSave,
     handleReset,
     handleSubmit,
-    jumpToNext,
   } = useAssignment();
   const nav = useNavigate();
 
@@ -39,9 +37,8 @@ export function TakingPage() {
 
   return (
     <div className="max-w-3xl mx-auto space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center">
         <h1 className="text-xl font-bold text-[var(--bets-text-dark)]">{assignment?.assessment.title ?? "Assessment"}</h1>
-        <Badge className="bg-[#f5eefb] text-[var(--bets-primary)]">{assignment?.status}</Badge>
       </div>
 
       <Card>
@@ -58,12 +55,7 @@ export function TakingPage() {
           <div className="flex gap-2 mt-3 text-xs flex-wrap items-center">
             <span className="px-2 py-1 rounded bg-[var(--bets-primary)] text-white">{s1}</span>
             <span className="px-2 py-1 rounded bg-white border border-[var(--color-border)] text-[var(--bets-text-muted)]">{s2}</span>
-            <span className="ml-auto flex gap-2">
-              {unansweredIds.length > 0 && (
-                <button onClick={jumpToNext} className="px-2 py-1 rounded border bg-white text-[var(--bets-primary)] border-[var(--bets-primary)] hover:bg-[#f5eefb] text-xs">
-                  Next unanswered →
-                </button>
-              )}
+            <span className="ml-auto">
               <button onClick={handleReset} className="px-2 py-1 rounded border bg-white text-red-600 border-red-200 hover:bg-red-50 text-xs">
                 Reset
               </button>
