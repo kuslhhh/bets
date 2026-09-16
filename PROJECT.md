@@ -29,6 +29,13 @@ Scope: **ONE organisation only.** No multi-tenancy in v1.
 > `must_change_password` flag with email-based reset (generic SMTP/Nodemailer, hashed single-use
 > tokens in `verification_tokens`, console-log fallback in dev). Affected: FR-1/FR-3, §6.4, §9 auth
 > + user endpoints, §10.1, §11, §14, §17 (`SMTP_*`, `APP_URL`), §20, §21-Q12, §22 Phases 3/7, §23-11.
+>
+> **Spec-change note (2026-09-11, scope simplification):** reduced RBAC from 4 roles
+> (`ADMIN`/`TOP_MANAGEMENT`/`MANAGER`/`EMPLOYEE`) to **2 roles** (`ADMIN` + `USER`);
+> added public self-registration (`POST /api/auth/register`); taking is self-serve (any authed
+> `USER` can start a PUBLISHED assessment without admin assignment — assignments are auto-created);
+> admin alone gets organisation analytics/reports. Affected: §1.2, FR-1/FR-2/FR-5/FR-10,
+> §4, §6.1, §9 auth + assignments, §10, §11, §12, §13, §15, §20, §21, §22, §23.
 
 ---
 
@@ -59,19 +66,16 @@ Assess → Score → Identify weak areas → Prioritize problems → Generate/di
 
 ### 1.2 Users and intent
 
-Four roles, one organisation (§4 for the permission matrix; role ≠ automatic access — every
-assessment/result access additionally requires an assignment/scope check):
+Two roles, one organisation (§4 for the permission matrix; role ≠ automatic access — every
+assessment/result access additionally requires a permission/scope check):
 
 | Role | Intent |
 |---|---|
-| `ADMIN` | Full system administration: users, roles, assessment configuration, seeded questions/options, configurable scoring metadata, reports, settings. |
-| `TOP_MANAGEMENT` | Takes assessments; sees organisation-level insights as permitted. Senior title alone grants nothing — permissions are explicit (§4). |
-| `MANAGER` | Takes assigned assessments; sees permitted results (own + explicitly shared/aggregated results). |
-| `EMPLOYEE` | Takes assigned assessments; sees own results. |
+| `ADMIN` | Single bootstrap admin: users, assessments, questions/options, publish/close, analytics/reports, settings. One seeded admin (`ADMIN_EMAIL`); new registrations are always `USER` (role promotion only via admin `PATCH /users/:id/role` if needed for recovery). |
+| `USER` | Any self-registered user: registers → logs in → takes the published assessment → sees own results. No assignment by admin required. |
 
-No consultant/advisor role in v1. `NEEDS CONFIRMATION`: whether top management should see
-identifiable individual answers or only anonymised aggregates (default in this spec: aggregates only
-unless explicitly assigned — see §4, §13).
+No `TOP_MANAGEMENT`/`MANAGER`/`EMPLOYEE` split in v1 — all non-admin take the assessment as `USER`
+and analytics are admin-only (previous `TOP_MANAGEMENT` aggregate access removed). No consultant/advisor role.
 
 ---
 
@@ -252,9 +256,9 @@ Same 100/75/50/25 rubric. Stems are perceptions of leadership, not self-statemen
 
 ## 3. Functional Requirements
 
-### FR-1 Login / authentication
-- Email + password login via Auth.js (credentials provider). Sessions: database sessions
-  (see §14). No social login, no SSO in v1.
+### FR-1 Login / authentication (+ self-registration)
+- **Registration (public):** any user can self-register via `POST /api/auth/register` with `{name, email, password}` → creates `USER` (role `USER` only), then can log in. No admin invite required. Zod validation, duplicate email → 409, audit logged.
+- **Login:** email + password via Auth.js (credentials provider). Sessions: database sessions (see §14). No social login, no SSO in v1.
 - Password reset is **email-based** (generic SMTP via Nodemailer, `server/lib/email/`): user requests
   a link → single-use hashed token in `verification_tokens` (1h TTL) → link logged to console in dev,
   emailed in prod. No temporary passwords, no `must_change_password` flag. Account lockout after
@@ -263,15 +267,14 @@ Same 100/75/50/25 rubric. Stems are perceptions of leadership, not self-statemen
   forgot-password always returns 200 (no enumeration).
 
 ### FR-2 RBAC
-- Single-organisation RBAC: `users → roles → permissions` (§6). Four seed roles (§4).
+- Single-organisation RBAC: `users → roles → permissions` (§6). Two seed roles (`ADMIN`, `USER`) (§4).
 - Every API and every page performs **server-side** authentication + permission + (where relevant)
   assignment/scope checks. Role name alone never authorises; the `role_permissions` join does.
-- Admin UI to assign/revoke roles and activate/deactivate users. Permission catalogue itself is
-  seed-managed (code-defined), not admin-editable in v1 (`ASSUMPTION` — prevents privilege escalation).
+- Admin can list users and (if needed for recovery) change a user's role via `PATCH /users/:id/role`; permission catalogue itself is seed-managed (code-defined), not admin-editable in v1 (`ASSUMPTION` — prevents privilege escalation).
 
-### FR-3 User management (Admin)
-- CRUD users (name, email, role, active flag), search/paginate, activate/deactivate, assign role,
-  trigger password-reset email. Deactivation preserves history (never hard-delete users with responses; §13).
+### FR-3 User management
+- **Self-registration:** public `POST /api/auth/register` (FR-1); no admin invite needed.
+- **Admin:** CRUD users (name, email, active flag), search/paginate, activate/deactivate, (optional) role change for recovery via `PATCH /users/:id/role`, trigger password-reset email. Deactivation preserves history (never hard-delete users with responses; §13).
 - Audit log records actor, action, target, timestamp (§14).
 
 ### FR-4 Assessment management (Admin)
@@ -281,16 +284,17 @@ Same 100/75/50/25 rubric. Stems are perceptions of leadership, not self-statemen
   results readable. `ASSUMPTION`: published assessments are structure-frozen (no add/remove/retype
   of questions or options after publish — §5, §13).
 
-### FR-5 Assessment assignment (Admin/privileged)
-- Admin assigns a published assessment to users (individual select and/or "all active users").
-  Assignment = row in `assessment_assignments` with status
-  `ASSIGNED → IN_PROGRESS → SUBMITTED` (+ `EXPIRED` if past due date).
+### FR-5 Assessment assignment (self-serve)
+- **Taking is self-serve:** any authed `USER` can take a `PUBLISHED` assessment — no admin assignment step.
+  The first `PUT /api/assignments/:id/responses` or `POST /api/assignments/:id/start` auto-creates an
+  `assessment_assignments` row (`ASSIGNED → IN_PROGRESS → SUBMITTED`, + `EXPIRED` if past `due_at`);
+  admin explicit assignment (`POST /api/assessments/:id/assign`) remains available but optional.
 - `ASSUMPTION`: one active assignment per (user, assessment) at a time; reassessment = new
-  assignment created after submission (rules §13). Due dates optional.
+  assignment (attempt+1) created after submission (rules §13). Due dates optional, enforced on submit.
 
 ### FR-6 Taking an assessment
-- Assignee sees "My Assessments" (assigned, in-progress, submitted). Start → answer section by
-  section (S1 then S2). Single-select scored questions (radio) + free-text slots for open prompts.
+- Any authed `USER` sees available `PUBLISHED` assessments + "My Assessments" (in-progress, submitted).
+  Start (auto-creates assignment if none) → answer section by section (S1 then S2). Single-select scored questions (radio) + free-text slots for open prompts.
 - Autosave draft (debounced PUT) + explicit Save; Resume later. Client shows completion progress
   (answered/required). All writes validated server-side with Zod; option IDs must belong to
   questions of the assignment's assessment.
@@ -311,9 +315,10 @@ Same 100/75/50/25 rubric. Stems are perceptions of leadership, not self-statemen
   be labelled estimate and never persisted.
 
 ### FR-10 Dashboards
-- Personal dashboard (own latest + history + trend), Manager dashboard (permitted aggregates),
-  Top-Management organisation dashboard (aggregates across submitted assignments), Admin dashboard
-  (completion, distribution, user management shortcuts). See §12.
+- **User dashboard:** own latest + history + trend (`results.self.view`).
+- **Admin dashboard/analytics:** organisation aggregates across all submitted assignments
+  (completion, distribution, category averages, weakest areas) + user-management shortcuts.
+  Requires `results.org.view`/`reports.view` (admin-only). See §12.
 
 ### FR-11 Category-level results
 - Per submission: 6 finance categories (Self/Org × Knowledge/Usage/Decision Making) with average,
@@ -351,30 +356,30 @@ Permissions are fine-grained strings checked server-side (`permission(code)` hel
 guards). Assignment/scope checks apply on top (even with the permission, a user can only touch
 assignments/results they are entitled to — §13).
 
-| Capability | Admin | Top Mgmt | Manager | Employee |
-|---|:---:|:---:|:---:|:---:|
-| Users: list/view (`users.view`) | ✅ | ❌ | ❌ (team list `RECOMMENDATION`, default ❌) | ❌ |
-| Users: create/update/role/activate (`users.manage`) | ✅ | ❌ | ❌ | ❌ |
-| Roles/permissions: view catalogue | ✅ | ❌ | ❌ | ❌ |
-| Assessments: create/update/publish/close (`assessments.manage`) | ✅ | ❌ | ❌ | ❌ |
-| Assessments: view published (assigned scope) | ✅ | ✅ own assigned | ✅ own assigned | ✅ own assigned |
-| Questions/sections/categories: manage (`questions.manage`) | ✅ | ❌ | ❌ | ❌ |
-| Question score values: manage (`questions.scores.manage`) | ✅ | ❌ | ❌ | ❌ |
-| Assignments: create/list all (`assignments.manage`) | ✅ | ❌ | ❌ | ❌ |
-| Assignments: view own (`assignments.self.view`) | ✅ | ✅ | ✅ | ✅ |
-| Assignments: answer/submit own (`assignments.self.respond`) | ✅* | ✅ | ✅ | ✅ |
-| Own results: view (`results.self.view`) | ✅ | ✅ | ✅ | ✅ |
-| Organisation aggregates: view (`results.org.view`) | ✅ | ✅ | ❌† | ❌ |
-| Identifiable individual results: view (`results.individual.view`) | ✅ | ❌‡ | ❌ | ❌ |
-| Reports/export (`reports.view` / `reports.export`) | ✅ | ✅ view only | ❌ | ❌ |
-| Settings: manage (`settings.manage`) | ✅ | ❌ | ❌ | ❌ |
+| Capability | Admin | User |
+|---|:---:|:---:|
+| Users: list/view (`users.view`) | ✅ | ❌ |
+| Users: create/update/role/activate (`users.manage`) | ✅ | ❌ |
+| Auth: self-register (`POST /api/auth/register`) | — (already admin) | ✅ public |
+| Roles/permissions: view catalogue | ✅ | ❌ |
+| Assessments: create/update/publish/close (`assessments.manage`) | ✅ | ❌ |
+| Assessments: view published | ✅ (all) | ✅ published (self-serve take) |
+| Questions/sections/categories: manage (`questions.manage`) | ✅ | ❌ |
+| Question score values: manage (`questions.scores.manage`) | ✅ | ❌ |
+| Assignments: create/list all (`assignments.manage`) | ✅ (optional assign) | ❌ |
+| Assignments: view own (`assignments.self.view`) | ✅* | ✅ |
+| Assignments: answer/submit own (`assignments.self.respond`) | ✅* | ✅ |
+| Own results: view (`results.self.view`) | ✅ | ✅ |
+| Organisation aggregates: view (`results.org.view`) | ✅ | ❌ |
+| Identifiable individual results: view (`results.individual.view`) | ✅ | ❌ |
+| Reports/export (`reports.view` / `reports.export`) | ✅ | ❌ |
+| Settings: manage (`settings.manage`) | ✅ | ❌ |
 
 \* Admin *can* hold an assignment for testing, but `ASSUMPTION`: production admin accounts are not
-routinely assigned assessments.
-† `RECOMMENDATION`: Managers get team-aggregate view only if the owner confirms team structure
-(a `teams`/`departments` model is **not** in v1 — no team tables exist; adding teams is future scope).
-‡ Default denies Top Management access to identifiable individual answers (aggregate-only). Granting
-`results.individual.view` to Top Management is a product-owner decision (§21).
+routinely taking assessments.
+
+> Previous `TOP_MANAGEMENT`/`MANAGER` rows collapsed into `USER`; analytics (`results.org.view`,
+> `reports.*`) are now admin-only.
 
 Seed permissions catalogue (authoritative string codes): `users.view`, `users.manage`,
 `assessments.manage`, `questions.manage`, `questions.scores.manage`, `assignments.manage`,
@@ -436,8 +441,8 @@ Seed permissions catalogue (authoritative string codes): `users.view`, `users.ma
 
 ### 5.6 Text answers
 - Unscored, optional (`ASSUMPTION`), stored per (assignment, question, slot_index).
-  Editable until submit. Visible to the respondent + Admin (+ Top Mgmt aggregates only as counts/
-  excerpts if explicitly permitted — default: not visible; §13).
+  Editable until submit. Visible to the respondent + Admin (aggregates only as counts/excerpts
+  if explicitly permitted — default: not visible to others; §13).
 
 ### 5.7 Assignments / submissions / results
 - `assessment_assignments`: (assessment, assignee, status, due date, attempt number).
@@ -450,7 +455,7 @@ Seed permissions catalogue (authoritative string codes): `users.view`, `users.ma
 
 ## 6. Database Schema
 
-Conventions: PostgreSQL via Prisma. PKs `TEXT` (cuid/uuid, `default(cuid())`) except where noted;
+Conventions: PostgreSQL via Prisma. PKs `TEXT` (`default(uuid())` → `gen_random_uuid()::text`, requires `pgcrypto` extension) except where noted;
 FKs indexed; `created_at timestamptz default now()`, `updated_at timestamptz` (trigger/`@updatedAt`).
 ` citext`-style case-insensitive email: `UNIQUE` on `lower(email)` (Prisma: `email` unique + app-level
 normalisation + DB unique index on expression via migration). Soft-delete: none for survey content
@@ -461,15 +466,15 @@ Fixed-domain strings (`status`, `type`, `score_value`) use TEXT/INT + SQL CHECK 
 for seed-only value sets (see change note at top of file).
 
 ### 6.1 `roles`
-Purpose: the 4 role identities. Lookup table, seeded, not runtime-created in v1.
+Purpose: the 2 role identities. Lookup table, seeded, not runtime-created in v1.
 | Column | Type | Null | Constraints |
 |---|---|---|---|
 | `id` | TEXT | NOT NULL | PK |
-| `code` | TEXT | NOT NULL | UNIQUE (`ADMIN`,`TOP_MANAGEMENT`,`MANAGER`,`EMPLOYEE`) |
+| `code` | TEXT | NOT NULL | UNIQUE (`ADMIN`,`USER`) |
 | `name` | TEXT | NOT NULL | display name |
 | `description` | TEXT | NULL | |
 | `created_at` / `updated_at` | TIMESTAMPTZ | NOT NULL | |
-Indexes: PK; UNIQUE(code). Business rules: codes immutable; seed-only in v1.
+Indexes: PK; UNIQUE(code). Business rules: codes immutable; seed-only in v1 (new registrations always `USER`).
 
 ### 6.2 `permissions`
 Purpose: stable permission catalogue (code-defined strings, §4). Seeded; Admin cannot create new codes in v1.
@@ -771,6 +776,7 @@ where §13 demands it); 409 conflicts (duplicate submit, stale version); paginat
 `?page=&pageSize=&q=` → `{data, page, pageSize, total}`.
 
 ### Auth
+- **`POST /api/auth/register`** — purpose: public self-registration (USER only). Auth: public (rate-limited). Body: `{name, email, password}` (Zod: name 1-200, email, password min 8 + upper/lower/digit). Response: `201 {user:{id,name,email,role:"USER"}}`. Errors: 400 validation; 409 email exists. Audited.
 - **`POST /api/auth/login`** — purpose: credentials login (Auth.js credentials provider +
   `authorize()`). Auth: public (rate-limited). Body: `{email, password}` (Zod: email, min-length).
   Response: session cookie set; `{user:{id,name,email,role}}`. Errors: 401 generic; 423 locked.
@@ -809,13 +815,11 @@ where §13 demands it); 409 conflicts (duplicate submit, stale version); paginat
   Response: `{user}`. Rule: cannot demote/deactivate own account (409); audited.
 
 ### Assessments
-- **`GET /api/assessments`** — list (Admin: all; others: published + assigned only — scope filter
-  server-side). Auth required. Query: `status, type`. Response: paginated assessments.
+- **`GET /api/assessments`** — list (Admin: all; Users: published only). Auth required. Query: `status, type`. Response: paginated assessments.
 - **`POST /api/assessments`** — create draft (optionally clone structure from a template).
   Perm: `assessments.manage`. Body: `{title, description?, type?, cloneTemplate?:boolean}`.
   Response: `201 {assessment}`.
-- **`GET /api/assessments/:id`** — detail + sections/categories/questions tree (assignees see only
-  assessments they are assigned to). Scope-guarded.
+- **`GET /api/assessments/:id`** — detail + sections/categories/questions tree. Admin: any; User: published only. Scope-guarded.
 - **`PATCH /api/assessments/:id`** — edit draft fields/structure. Perm: `assessments.manage`.
   Post-publish, structural changes (add/remove/retype questions or options) → 409 frozen-structure
   (guidance: create a new assessment). Text/order edits allowed. Response: `{assessment}`.
@@ -827,8 +831,8 @@ where §13 demands it); 409 conflicts (duplicate submit, stale version); paginat
 
 ### Questions (direct edit, no versioning)
 - **`GET /api/assessments/:id/questions`** — question tree for an assessment
-  (Admin: all incl. DRAFT questions; assignee: ACTIVE questions of assigned assessments only).
-  Scores stripped from assignee payloads. Scope-guarded.
+  (Admin: all incl. DRAFT questions; Users: ACTIVE questions of published assessments only).
+  Scores stripped from user payloads. Scope-guarded.
   Response: `{sections:[{categories, questions:[{options}]}]}`.
 - **`POST /api/questions`** — create question + options/slots. Perm: `questions.manage`. Body:
   `{assessmentId, sectionId, categoryId?, type, promptText, order?, isRequired?, slotCount?,
@@ -843,37 +847,20 @@ where §13 demands it); 409 conflicts (duplicate submit, stale version); paginat
 - **`PATCH /api/questions/:id/status`** — `DRAFT`/`ACTIVE`/`DEPRECATED` toggle. Perm:
   `questions.manage`. Questions with responses cannot be deleted (deprecate instead).
 
-### Assignments (taking flow)
-- **`POST /api/assessments/:id/assign`** — assign to users. Perm: `assignments.manage`. Body:
-  `{userIds:[…] | assignAllActive?:boolean, dueAt?}`. Response: `{created, skipped}` (idempotent on
-  active duplicates). Errors: 409 if assessment not PUBLISHED.
-- **`GET /api/my-assessments`** — own assignments with progress + status. Perm:
-  `assignments.self.view`. Response: `{assignments:[{id, assessment, status, attempt, dueAt,
-  progress:{answered, required}}]}`.
-- **`GET /api/assignments/:id`** — assignment detail + questions + drafts. Scope: owner or
-  `assignments.manage`. Response: `{assignment, questions, drafts:{responses, textAnswers}}`.
-- **`POST /api/assignments/:id/start`** — `ASSIGNED→IN_PROGRESS` (+ `started_at`). Scope: owner,
-  perm `assignments.self.respond`. Idempotent. Errors: 404/409 (not owner, expired, closed, already submitted).
-- **`PUT /api/assignments/:id/responses`** — autosave drafts. Scope: owner, editable status. Body:
-  `{responses?:[{questionId, questionOptionId}], textAnswers?:[{questionId, slotIndex,
-  answerText}]}` (partial allowed). Server re-resolves scores; returns `{saved, progress}`.
-  Errors: 400 (option∉question, question∉assessment), 409 (submitted/expired/closed).
-- **`POST /api/assignments/:id/submit`** — validate completeness → run scoring transaction (§8.3) →
-  `SUBMITTED` + result. Idempotency-Key header recommended. Errors: 400 incomplete (with missing
-  list), 409 already submitted. Response: `201 {resultId, overallSelf, overallOrg, overallCombined}`.
+### Assignments (taking flow — self-serve)
+- **`POST /api/assessments/:id/assign`** — **optional** admin bulk-assign (retained for compat). Perm: `assignments.manage`. Body: `{userIds:[…] | assignAllActive?:boolean, dueAt?}`. Response: `{created, skipped}` (idempotent on active duplicates). Errors: 409 if assessment not PUBLISHED. Not required for users to take — they auto-create assignments on start/save.
+- **`GET /api/my-assessments`** — own assignments with progress + status. Perm: `assignments.self.view`. Response: `{assignments:[{id, assessment, status, attempt, dueAt, progress:{answered, required}}]}`. Also reachable by first-time users via start/save (no prior row needed).
+- **`GET /api/assignments/:id`** — assignment detail + questions + drafts. Scope: owner or `assignments.manage`. Response: `{assignment, questions, drafts:{responses, textAnswers}}`.
+- **`POST /api/assignments/:id/start`** — `ASSIGNED→IN_PROGRESS` (+ `started_at`). Also serves as "ensure assignment" for self-serve: if no assignment exists for caller + assessment, one is created. Scope: caller is owner, perm `assignments.self.respond`. Idempotent. Errors: 404/409 (expired, closed, already submitted).
+- **`PUT /api/assignments/:id/responses`** — autosave drafts. Self-serve: caller can create assignment implicitly by saving against a published assessment. Scope: owner, editable status. Body: `{responses?:[{questionId, questionOptionId}], textAnswers?:[{questionId, slotIndex, answerText}]}` (partial allowed). Server re-resolves scores; returns `{saved, progress}`. Errors: 400 (option∉question, question∉assessment), 409 (submitted/expired/closed).
+- **`POST /api/assignments/:id/submit`** — validate completeness → run scoring transaction (§8.3) → `SUBMITTED` + result. Idempotency-Key header recommended. Errors: 400 incomplete (with missing list), 409 already submitted. Response: `201 {resultId, overallSelf, overallOrg, overallCombined}`.
 
 ### Results / dashboards / reports
 - **`GET /api/results/:assignmentId`** — result + category scores + composed insights + own answers.
-  Scope: owner (`results.self.view`) or Admin/`results.individual.view`; Top Mgmt without that perm
-  gets 404. Response: `{result, categories:[…], insights:[…], answers?}`.
-- **`GET /api/dashboard`** — role-scoped dashboard DTO (own latest/history or org aggregates +
-  completion). Perms: base auth; org blocks require `results.org.view`. Response:
-  `{personal:{…} | null, organisation:{…} | null, completion:{…}}`.
-- **`GET /api/dashboard/categories`** — category averages (+ Expected=75 reference line data) for
-  charts, scoped as above. Query: `assignmentId? | period?`. Response: `{categories:[{id,name,score,band}]}`.
-- **`GET /api/reports`** — aggregated report data (Admin / `reports.view`; export format needs
-  `reports.export`). Query: `assessmentId, from, to, format?=json|csv`. CSV default-anonymised
-  (no emails/names unless `results.individual.view` — explicit). Errors: 403.
+  Scope: owner (`results.self.view`) or Admin (`results.individual.view`); other users get 404. Response: `{result, categories:[…], insights:[…], answers?}`.
+- **`GET /api/dashboard`** — Admin analytics + (for users) personal stats. Perm: base auth; org aggregates gated by `results.org.view` (admin-only). Response: `{personal:{…} | null, organisation:{…} | null, completion:{…}}`. Users receive only `personal` + empty `organisation`.
+- **`GET /api/dashboard/categories`** — category averages (+ Expected=75 reference line) for charts, scoped as above. Query: `assignmentId? | period?`. Response: `{categories:[{id,name,score,band}]}`.
+- **`GET /api/reports`** — aggregated report data (Admin `reports.view`; export needs `reports.export`). Query: `assessmentId, from, to, format?=json|csv`. CSV anonymised unless `results.individual.view`. Errors: 403. User role gets 403.
 
 Route-adjustment note: Auth.js is used via `@auth/core` (framework-agnostic) wired into a Hono
 auth route — there are no `[...nextauth]` routes. `POST /api/auth/login` below is the custom
@@ -884,32 +871,17 @@ No other additions without a product decision.
 
 ## 10. Admin Features
 
-1. **Manage users:** list/search/paginate, create with role, edit, activate/deactivate, trigger
-   password-reset email, change role (self-demotion blocked). All actions audit-logged.
-2. **Assign roles:** role select from the 4 seed codes; permission matrix visible read-only
-   (permission codes themselves are code/seed-managed in v1).
-3. **Activate/deactivate users:** deactivation blocks login/assignments; history retained; never
-   hard-delete referenced users.
-4. **Manage assessments:** create (DRAFT), edit, publish (validated, no snapshot — frozen
-   structure instead), close, archive; availability windows; reassignment for new attempts.
-5. **Manage sections/categories:** create/reorder/rename on DRAFT assessments; frozen once published
-   (structural change = new assessment).
-6. **Manage questions:** direct CRUD; question list shows status + "has responses" warning badges;
-   option editor enforces 100/75/50/25 default set (custom scores need
-   `questions.scores.manage` + decision §21).
+1. **Manage users:** list/search/paginate, edit, activate/deactivate, (optional) change role for recovery (`PATCH /users/:id/role`, self-demotion 409), trigger password-reset email. All actions audit-logged. New users self-register — admin creation is not required.
+2. **Roles:** 2 codes (`ADMIN`, `USER`); permission matrix visible read-only (codes seed-managed, not admin-editable in v1).
+3. **Activate/deactivate users:** deactivation blocks login/new submissions; history retained; never hard-delete referenced users.
+4. **Manage assessments:** create (DRAFT), edit, publish (validated, no snapshot — frozen structure instead), close, archive; availability windows; reassignment for new attempts if desired.
+5. **Manage sections/categories:** create/reorder/rename on DRAFT assessments; frozen once published (structural change = new assessment).
+6. **Manage questions:** direct CRUD; question list shows status + "has responses" warning badges; option editor enforces 100/75/50/25 default set (custom scores need `questions.scores.manage` + decision §21).
 7. **Manage options:** label/text/order/score per question; scores snapshot into responses at answer time.
-8. **Publish/close assessment:** publish checklist enforced (sections, scored questions, options);
-   close stops submissions; both audited.
-9. **Edit questions (critical rule):** Admin edits questions directly — no versions table. Computed
-   results (`assessment_results`, `category_scores`, `responses.score_value`) stay immutable, but
-   past answer displays follow the current wording (accepted trade-off, §13). Structural
-   add/remove/retype on a PUBLISHED assessment is rejected (409 frozen-structure).
-   Acceptance: post-edit, previously submitted scores/bands are byte-identical (§23-10).
-10. **View organisation results:** aggregates, distributions, completion, trends, per-category
-    tables; identifiable answers only with `results.individual.view` (default: Admin only).
-11. **Configurable scoring (gated):** option score values (if confirmed) — aggregation formulas and
-    band config stay in code (`server/lib/scoring/`). Bands table returns only if §21-Q8 confirms
-    Admin configurability.
+8. **Publish/close assessment:** publish checklist enforced (sections, scored questions, options); close stops submissions; both audited.
+9. **Edit questions (critical rule):** Admin edits questions directly — no versions table. Computed results (`assessment_results`, `category_scores`, `responses.score_value`) stay immutable, but past answer displays follow current wording (accepted trade-off, §13). Structural add/remove/retype on a PUBLISHED assessment is rejected (409 frozen-structure). Acceptance: post-edit, previously submitted scores/bands are byte-identical (§23-10).
+10. **View analytics:** aggregates, distributions, completion, trends, per-category tables; identifiable individual answers with `results.individual.view` (admin-only). Users never see org aggregates.
+11. **Configurable scoring (gated):** option score values (if confirmed) — aggregation formulas and band config stay in code (`server/lib/scoring/`). Bands table returns only if §21-Q8 confirms Admin configurability.
 
 ---
 
@@ -917,21 +889,21 @@ No other additions without a product decision.
 
 | Screen | Who | Purpose / components / states / APIs |
 |---|---|---|
-| Login | Public | Email+password (React Hook Form + Zod), error/locked states. → `POST /api/auth/login`, `GET /api/auth/me`. |
-| Admin Dashboard | Admin (`assessments.manage` or `users.view`) | Completion %, submissions over time, weakest categories, pending assignments, user counts. → `GET /api/dashboard`, `/api/reports`. States: empty (no submissions), loading, error. |
-| User Management | Admin (`users.manage`) | Table (search, role filter, active toggle), create/edit sheets, role change, trigger reset email. → `/api/users*`, `/api/roles`. |
-| Assessment Management | Admin (`assessments.manage`) | List (status filter), create/publish/close actions with confirmations, frozen-structure badge. → `/api/assessments*`. |
-| Question Management | Admin (`questions.manage`) | Section→category→question tree; status + "has responses ⚠️" badges; option editor; direct-edit flow (frozen-structure 409 on published). → `/api/assessments/:id/questions`, `/api/questions*`. |
-| Assessment Assignment | Admin (`assignments.manage`) | User multi-select / "all active", due date, dry-run counts, idempotent results. → `POST /api/assessments/:id/assign`. |
-| My Assessments | All authed (`assignments.self.view`) | Cards: to-do / in-progress (Resume + progress bar) / submitted (View result). → `GET /api/my-assessments`. |
-| Assessment Taking UI | Assignee (`…self.respond`) | Section stepper (Self → Organisation), radio groups (a–d with labels, scores hidden), text slots, autosave indicator, progress, Save/Submit. → `GET/POST /api/assignments/:id*`, `PUT …/responses`. States: draft, saving, validation errors, submitted-locked, expired/closed. |
-| Assessment Completion | Assignee post-submit | Success + overall scores + weakest-category teaser + links. → `POST …/submit`, `GET /api/results/:assignmentId`. |
-| My Results | Assignee (`results.self.view`) | Attempt list + detail (category bars vs Expected=75 line, band chips, open answers recap). → `/api/results/:assignmentId`, `/api/dashboard/categories`. |
-| Organisation Results | `results.org.view` (Admin, Top Mgmt) | Aggregate cards, distribution, category ranking, filters (assessment/period). Anonymised by default. → `/api/dashboard`, `/api/reports`. |
-| Category Details | Same as above (+ own for personal) | One category: definition, contributing questions + own/avg scores, band interpretation, history sparkline. → `/api/results/:assignmentId`, `/api/dashboard/categories`. |
+| Register / Login | Public | Register (name/email/password) + login (email/password) via React Hook Form + Zod, error/locked states. → `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me`. |
+| Admin Dashboard (Analytics) | Admin (`results.org.view`/`reports.view`) | Completion %, submissions over time, weakest categories, user counts, distribution. → `GET /api/dashboard`, `/api/reports`. States: empty (no submissions), loading, error. |
+| User Management | Admin (`users.view`/`users.manage`) | Table (search, active toggle), edit/active, trigger reset email. → `/api/users*`. |
+| Assessment Management | Admin (`assessments.manage`) | List (status filter), create/publish/close with confirmations, frozen-structure badge. → `/api/assessments*`. |
+| Question Management | Admin (`questions.manage`) | Section→category→question tree; status + "has responses ⚠️" badges; option editor; direct-edit flow (409 on published). → `/api/assessments/:id/questions`, `/api/questions*`. |
+| Available Assessments | User (authed) | List of PUBLISHED assessments to start (self-serve; no assign needed). → `GET /api/assessments?status=PUBLISHED`. |
+| My Assessments | All authed (`assignments.self.view`) | Cards: in-progress (Resume + progress bar) / submitted (View result). → `GET /api/my-assessments`. |
+| Assessment Taking UI | User (`assignments.self.respond`) | Section stepper (Self → Organisation), radio groups (a–d labels, scores hidden), text slots, autosave indicator, progress, Save/Submit (auto-creates assignment). → `PUT …/responses`, `POST …/submit`. States: draft, saving, validation errors, submitted-locked, expired/closed. |
+| Assessment Completion | User post-submit | Success + overall scores + weakest-category teaser + links. → `POST …/submit`, `GET /api/results/:assignmentId`. |
+| My Results | User (`results.self.view`) | Attempt list + detail (category bars vs Expected=75, band chips, open answers). → `/api/results/:assignmentId`, `/api/dashboard/categories`. |
+| Organisation Analytics | Admin only | Aggregate cards, distribution, category ranking, filters (assessment/period). → `/api/dashboard`, `/api/reports`. |
+| Category Details | Admin / own | One category: definition, contributing questions + scores, band interpretation, history sparkline. → `/api/results/:assignmentId`, `/api/dashboard/categories`. |
 | Insights / Recommendations | Result viewers (scoped) | Priority-ordered insight cards (weakest first), "Expected 75" gap callouts. Rule-based, no AI. → insights inside result DTO. |
-| Historical Trends | Assignee (own) + org viewers | Recharts line/bar of overall + categories across attempts/periods. Empty-state until ≥2 submissions. → `/api/dashboard*`. |
-| Profile / Settings | All authed | Name, change password, session list/sign-out. Admin additionally sees settings (lockout, bands read-only link). → `/api/auth/me`, account PATCH (v1: name/password only). |
+| Historical Trends | User (own) + Admin (org) | Recharts line/bar of overall + categories across attempts/periods. Empty-state until ≥2 submissions. → `/api/dashboard*`. |
+| Profile / Settings | All authed | Name, change password, sign-out. Admin additionally sees settings (lockout, bands read-only). → `/api/auth/me`, `/api/account/password`. |
 
 Access control is server-enforced; UI gating mirrors permissions but never replaces route checks.
 Scores are never shown as editable inputs; option scores stay hidden during taking (prevents gaming).
@@ -974,14 +946,11 @@ Every concept below is tagged to its origin:
 - **Question edit behaviour:** Admin edits questions directly (no versions). Computed results
   stay immutable; past answer displays follow current wording (accepted trade-off). Structural
   add/remove/retype on PUBLISHED assessments → 409 frozen-structure (new assessment instead).
-- **Assignment restrictions:** only the assignee answers (Admin preview is read-only unless also
-  assigned); inactive users can't start; unassigned users get 404 (not 403) on others' assignments.
-- **Result visibility:** owner sees own full result; Admin sees all; Top Mgmt sees aggregates
-  without `results.individual.view`; Managers/Employees see only own (defaults; §4).
+- **Assignment restrictions:** only the assignee answers; inactive users can't start; self-serve users auto-create assignments on start/save; cross-user access → 404 (not 403).
+- **Result visibility:** owner sees own full result (`results.self.view`); Admin sees all + aggregates (`results.individual.view`, `results.org.view`); other users get 404 on others' results (defaults; §4).
 - **Question modification rights:** `questions.manage` (+ `questions.scores.manage` for scores);
   structural publish/close: `assessments.manage`.
-- **On publish:** completeness validated; assessment assignable; structure frozen from this
-  point (text/order edits only). On close: no new starts/submits; reads + reports continue.
+- **On publish:** completeness validated; assessment takeable (self-serve); structure frozen from this point (text/order edits only). On close: no new starts/submits; reads + reports continue.
 - **On user deactivation:** sessions revoked; login blocked; assignments untouched (history intact);
   no reassignment of existing rows; audit entry written.
 
@@ -1002,7 +971,7 @@ Every concept below is tagged to its origin:
 - **Permission middleware/helper:** `server/lib/rbac/*` — `PERMISSIONS` constants, `hasPermission()`,
   `requirePermission()` (throws 403), Hono middleware guarding `/api/*`; unit-tested.
 - **IDOR prevention:** all `:id` params re-checked against caller scope; cross-user assignment/result
-  access returns 404 (not 403) to avoid oracle leaks; no sequential-ID guessing (cuids).
+  access returns 404 (not 403) to avoid oracle leaks; no sequential-ID guessing (uuids).
 - **Input validation with Zod:** every body/query/param parsed (`server/lib/validation/*`); Prisma
   calls receive only parsed data; text answers length-capped + sanitised on render (React escaping,
   no `dangerouslySetInnerHTML`).
@@ -1036,7 +1005,7 @@ Excel (.xlsx, read-only fixture)
   outside `server/lib/scoring/` and seed data).
 
 ### 15.2 What gets seeded
-- `roles` (4) + `permissions` (§4 catalogue) + `role_permissions` (matrix defaults).
+- `roles` (2: `ADMIN`, `USER`) + `permissions` (§4 catalogue) + `role_permissions` (matrix defaults; USER gets `assignments.self.view`, `assignments.self.respond`, `results.self.view`).
 - Assessment "Financial Maturity Assessment" (`type='FINANCIAL_MATURITY'`, status DRAFT; Admin
   publishes post-deploy) with:
   - 2 sections (order 1–2; `source_text` verbatim incl. spacing, display title normalised);
@@ -1164,7 +1133,7 @@ v1 does **NOT** include (build only with an explicit product decision + spec ame
 - SMS delivery, scheduled reports, PDF export engine (print-CSS only in v1). (Email via generic
   SMTP is in scope for password reset only — no bulk/marketing email.)
 - `Sheet1`'s 19-statement General survey as a takeable assessment (reference data only until confirmed).
-- Teams/departments model, manager-team scoping, SSO/social login, public self-registration.
+- Teams/departments model, `TOP_MANAGEMENT`/`MANAGER` splits, SSO/social login. Public **self-registration is now IN scope** (`POST /api/auth/register`).
 
 ---
 
@@ -1175,15 +1144,16 @@ v1 does **NOT** include (build only with an explicit product decision + spec ame
 | 1 | Confirm the exact scoring algorithm: unweighted AVERAGEs as in Excel (placeholder §8.2), or weighted? Confirm rounding (2dp?) and how Min/Max should display. | Engine stamp + tests depend on it. |
 | 2 | Do all workbook sheets belong to v1? Is `Sheet1` (General Business Health, external refs) in scope, later, or out? If in: supply `[1]Survey Statements - General` workbook. | Determines seed + categories + insights. |
 | 3 | Finance insight copy: Excel has no finance-category interpretations. Supply official text per band per category (or approve neutral placeholder)? | `insights.body` content. |
-| 4 | Are S1+S2 one assessment or two assignable units? Can a user be assigned only one section? | Assignment + snapshot model. |
-| 5 | Reassessment rules: who can reassign, how soon, max attempts, does latest or best count for org aggregates? | Assignment lifecycle + dashboard logic. |
-| 6 | Visibility: do Top Management/Managers see identifiable individual answers, aggregates only, or team slices (needs teams model)? | RBAC defaults (§4 ‡) + report anonymisation. |
-| 7 | Report/export requirements: is CSV enough for v1? Who may export identifiable data? Any PDF/period reporting? | `reports` scope + Phase 7. |
+| 4 | Are S1+S2 one assessment or two assignable units? | Assignment + snapshot model. (Simplified: one assessment containing both sections.) |
+| 5 | Reassessment rules: who can re-take, how soon, max attempts, does latest or best count for org aggregates? | Assignment lifecycle + dashboard logic. (Simplified: any USER can re-take via new assignment attempt; admin decides if needed.) |
+| 6 | ~~Visibility: do Top Management/Managers see …~~ **Resolved 2026-09-11:** 2-role model — only ADMIN sees aggregates/identifiable results; USER sees own only. | RBAC defaults closed. |
+| 7 | Report/export requirements: is CSV enough for v1? Any PDF/period reporting? | `reports` scope + Phase 7. (Simplified: admin-only CSV/JSON.) |
 | 8 | May Admin edit option score values (and bands), or are 100/75/50/25 + bands frozen? If editable: on live rows, and who sees the change? | `questions.scores.manage` semantics. |
 | 9 | Can Admin add new categories/questions, or only edit seeded ones? Are open-text slots required or optional, and is S1-Q8 3 or 4 slots? | Validation + seed counts. |
 | 10 | Audit/retention requirements: log retention period, account-deletion policy, data-export-on-exit? | `audit_logs`, user-delete flow. |
 | 11 | Master-data fixes: confirm typos stay (`Knowladge` in source_text) with normalised display names; confirm S2-Q16 numbering stays "16". | Seed review sign-off. |
 | 12 | Hosting: confirm Postgres provider. (Email resolved: generic SMTP via Nodemailer; dev logs links to console.) | Env + deployment plan. |
+| 13 | Should ADMIN be able to promote a USER to ADMIN for recovery, or is exactly one admin account enforced? | Role-change policy (T1). |
 
 ---
 
@@ -1214,33 +1184,31 @@ v1 does **NOT** include (build only with an explicit product decision + spec ame
 - **Phase 2 — Seed (idempotent, content-exact):** `server/prisma/seed-data/finance.json`
   transcribed from §2.4/§2.5 (S1 Q1–Q7 + Q8 open, S2 Q1–Q7 + Q16 open with `source_number:"16"`,
   56 options at 100/75/50/25, `source_text` preserving `Knowladge` etc.); `server/prisma/seed.ts`
-  upserts by stable keys. Seeds: 4 roles, 14 permissions + matrix, 1 DRAFT assessment, 2 sections,
+  upserts by stable keys. Seeds: **2 roles (`ADMIN`, `USER`)**, 14 permissions + matrix, 1 DRAFT assessment, 2 sections,
   6 categories, 16 questions (14 scored + 2 `TEXT_MULTI_SLOT`, S1-Q8 `slot_count:4` flagged
   `needs_confirmation`), 56 options, env bootstrap admin. Bands live in code
   (`server/lib/scoring/bands.ts`), not seed. `scripts/verify-seed.mts` asserts exact counts
   (14/2/56, 6 categories). *Exit:* re-running seed is a no-op; count test passes.
 - **Phase 3 — Auth + RBAC core:** Auth.js (`@auth/core` + PrismaAdapter) Credentials provider
   (`authorize()` verifies bcrypt, checks `is_active`/lockout 5 fails → 15 min, generic 401);
-  database sessions. Hono JSON routes: `POST /api/auth/login` (verify → create DB session →
+  database sessions. Hono JSON routes: **`POST /api/auth/register` (public, USER only)** + `POST /api/auth/login` (verify → create DB session →
   session cookie → audit), `POST /api/auth/logout`, `GET /api/auth/me`
   (user + role + permission codes), `POST /api/auth/forgot-password` (always-200 token issue +
   send/log link), `POST /api/auth/reset-password` (consume token → new hash → revoke other
   sessions), `POST /api/account/password` (logged-in change). `server/lib/email/` (Nodemailer SMTP,
   console-log fallback in dev). `server/lib/rbac/` guards (`requireSession`,
   `requirePermission`, `ownsAssignment`, `canViewResult`; cross-user access → 404); Zod error
-  envelope; audit helper. *Exit:* login/me/logout/reset via HTTP client; 401/403/404 semantics verified.
-- **Phase 4 — Users, assessments, questions APIs:** users CRUD + role catalogue + role
-  change (self-demote 409; delete = deactivate when history exists); assessment CRUD + publish
+  envelope; audit helper. *Exit:* register/login/me/logout/reset via HTTP client; 401/403/404 semantics verified.
+- **Phase 4 — Users, assessments, questions APIs:** users CRUD (admin `GET/PATCH/DELETE` + optional role change, self-demote 409; delete = deactivate when history exists); assessment CRUD + publish
   (checklist, no snapshot — frozen structure) + close (`DRAFT→PUBLISHED→CLOSED`); questions tree,
   create, direct PATCH (409 frozen-structure on PUBLISHED assessments), status toggle.
-  Scores stripped from assignee-facing payloads.
+  Scores stripped from user-facing payloads.
   *Exit:* frozen-structure guard proven by test (structural change on PUBLISHED → 409).
-- **Phase 5 — Assignments, scoring engine, results:** assign (PUBLISHED-only, idempotent, attempts),
-  my-assessments (progress), assignment detail, start (idempotent), save-responses (partial upserts,
+- **Phase 5 — Assignments (self-serve), scoring engine, results:** self-serve start/save (auto-create assignment on first POST/PUT if published), my-assessments (progress), assignment detail, save-responses (partial upserts,
   server-resolved `score_value`, option∈question checks), submit (completeness 400 → single transaction:
   validate → scores → 6 category AVGs → overalls → min/max → band lookup → insights composed on read,
-  stamped `finance-v1-placeholder`); result detail, role-scoped dashboard aggregates, reports
-  (CSV behind `reports.export`, anonymised). *Exit:* submit reproduces Excel AVERAGEs on fixtures;
+  stamped `finance-v1-placeholder`); optional admin bulk `POST /assessments/:id/assign` retained; result detail, admin-only dashboard aggregates (org), reports
+  (CSV behind `reports.export`, admin-only). *Exit:* submit reproduces Excel AVERAGEs on fixtures;
   old scores byte-identical after Admin edits question text.
 - **Phase 6 — Backend hardening:** rate limiting (login/submit/assign), full audit coverage (§9
   events), pagination/validation everywhere, session revocation on deactivation.
@@ -1262,33 +1230,17 @@ next; Phase 7 green-gates any frontend work).
 
 ## 23. Acceptance Criteria
 
-1. **Admin creates user:** `POST /api/users` with `users.manage` → 201, user listed, audit row written;
-   without the permission → 403; duplicate email → 409.
-2. **Admin assigns role:** `PATCH /api/users/:id/role` changes `role_id`; permission set changes on
-   next request; self-demotion rejected (409); audit row written.
-3. **Admin publishes assessment:** `POST /api/assessments/:id/publish` on a complete draft → status
-   `PUBLISHED`, `published_at` set, structure frozen; incomplete draft → 409 with checklist.
-4. **User receives assignment:** `POST /api/assessments/:id/assign` creates `ASSIGNED` rows (idempotent
-   re-POST skips actives); assignment appears in `GET /api/my-assessments`; unassigned user sees nothing.
-5. **User starts assessment:** `POST /api/assignments/:id/start` → `IN_PROGRESS` + `started_at`;
-   non-owner → 404; closed/expired → 409.
-6. **User saves responses:** `PUT …/responses` partial upserts persist across reload; invalid
-   option/question → 400; post-submit writes → 409; progress counts correct.
-7. **User submits:** `POST …/submit` with all required answered → `SUBMITTED` + result rows;
-   incomplete → 400 with missing list; repeat submit → 409 idempotent.
-8. **Backend calculates result:** stored `overall_self/org`, 6 `category_scores` exactly match
-   hand-computed Excel AVERAGEs on the same answers (fixture test); insights composed on read from
-   band config; `scoring_version` stamped; no score fields accepted from the client.
-9. **User sees permitted result:** owner reads full `GET /api/results/:assignmentId`; another
-   employee → 404; Top Mgmt without `results.individual.view` → 404 on individual, 200 on aggregates.
-10. **Admin updates a question:** PATCH edits text/order/options directly (200, with
-    `hasResponses` warning when applicable); structural add/remove/retype on a PUBLISHED assessment
-    → 409 frozen-structure. **Previously submitted scores/bands are byte-identical before and after**
-    (only displayed wording follows the edit); drafts keep validating against the assessment's
-    question set.
-11. **User resets password:** `POST /api/auth/forgot-password` → 200 for known and unknown emails
-    alike (no enumeration); token consumed once via `POST /api/auth/reset-password` → old password
-    rejected, new password logs in, reused/expired token → 400.
+1. **Public registration:** `POST /api/auth/register` with valid `{name,email,password}` → 201, audit row; duplicate email → 409; invalid → 400. New user role is always `USER`.
+2. **Admin role change (optional recovery):** `PATCH /api/users/:id/role` with `users.manage` changes `role_id`; permission set changes on next request; self-demotion rejected (409); audit row written. Without perm → 403.
+3. **Admin publishes assessment:** `POST /api/assessments/:id/publish` on a complete draft → status `PUBLISHED`, `published_at` set, structure frozen; incomplete draft → 409 with checklist.
+4. **User can take published assessment (self-serve):** authed `USER` calls `POST /api/assignments/:id/start` or `PUT …/responses` against a `PUBLISHED` assessment → assignment auto-created (`ASSIGNED`→`IN_PROGRESS`); appears in `GET /api/my-assessments`. No prior admin assign needed.
+5. **User starts assessment:** `POST /api/assignments/:id/start` → `IN_PROGRESS` + `started_at`; cross-user → 404; closed/expired → 409. Idempotent.
+6. **User saves responses:** `PUT …/responses` partial upserts persist across reload; invalid option/question → 400; post-submit writes → 409; progress counts correct.
+7. **User submits:** `POST …/submit` with all required answered → `SUBMITTED` + result rows; incomplete → 400 with missing list; repeat submit → 409 idempotent.
+8. **Backend calculates result:** stored `overall_self/org`, 6 `category_scores` exactly match hand-computed Excel AVERAGEs on the same answers (fixture test); insights composed on read from band config; `scoring_version` stamped; no score fields accepted from the client.
+9. **Result visibility:** owner reads full `GET /api/results/:assignmentId` (200); another user → 404; admin reads any result (200); user `GET /api/dashboard` sees only personal (`organisation` null/empty); admin sees org aggregates.
+10. **Admin updates a question:** PATCH edits text/order/options directly (200, with `hasResponses` warning when applicable); structural add/remove/retype on a PUBLISHED assessment → 409 frozen-structure. **Previously submitted scores/bands are byte-identical before and after** (only displayed wording follows the edit); drafts keep validating against the assessment's question set.
+11. **User resets password:** `POST /api/auth/forgot-password` → 200 for known and unknown emails alike (no enumeration); token consumed once via `POST /api/auth/reset-password` → old password rejected, new password logs in, reused/expired token → 400.
 
 ---
 
@@ -1306,12 +1258,9 @@ next; Phase 7 green-gates any frontend work).
    Admin edits text directly (computed results immutable; past answer displays follow current
    wording — accepted trade-off); PUBLISHED assessments reject structural changes (409), so
    in-flight assignments can't break. Structural change = new assessment.
-5. **Role + permission + assignment/scope checks on every access** — senior titles grant nothing by
-   themselves; explicit matrix (§4) with aggregate-only defaults for Top Management.
+5. **Role + permission + assignment/scope checks on every access** — only 2 roles (`ADMIN`/`USER`); admin alone gets org analytics (`results.org.view`); assignment checks cover self-serve rows.
 6. **Backend-only scoring mirroring Excel AVERAGEs** (`finance-v1-placeholder` until owner confirms),
    with band lookup from the Excel's 100–75.01 / 75–50.01 / 50–25.01 / 25–0 ranges and Expected=75.
-7. **Single organisation, four roles, no teams/tenants/AI in v1** — `Sheet1` general-health content
-   treated as unconfirmed reference until the owner supplies the missing workbook and scope decision.
+7. **Single organisation, two roles, self-serve taking, no teams/tenants/AI in v1** — `Sheet1` general-health content treated as unconfirmed reference until the owner supplies the missing workbook and scope decision.
 8. **Immutable results + audit trail** — one result per submission, insights composed on read
-   from frozen scores + band config, append-only
-   audit logs, `scoring_version` stamps for reproducibility.
+   from frozen scores + band config, append-only audit logs, `scoring_version` stamps for reproducibility.
