@@ -1,4 +1,4 @@
-import { prisma } from "./prisma";
+import { prisma } from "./prisma.js";
 
 // Audit helper — never throws.
 export async function audit(entry: {

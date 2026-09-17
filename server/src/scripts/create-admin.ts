@@ -7,8 +7,8 @@
 //
 // Falls back to ADMIN_EMAIL / ADMIN_PASSWORD env vars when args are omitted.
 
-import { hashPassword } from "../lib/password";
-import { prisma } from "../lib/prisma";
+import { hashPassword } from "../lib/password.js";
+import { prisma } from "../lib/prisma.js";
 
 const email = (process.argv[2] ?? process.env.ADMIN_EMAIL ?? "").toLowerCase().trim();
 const password = process.argv[3] ?? process.env.ADMIN_PASSWORD ?? "";

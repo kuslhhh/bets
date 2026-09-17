@@ -1,5 +1,5 @@
-import app from "./app";
-import { getPort } from "./lib/config";
+import app from "./app.js";
+import { getPort } from "./lib/config.js";
 
 const port = getPort(3000);
 

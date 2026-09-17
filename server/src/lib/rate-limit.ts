@@ -1,5 +1,5 @@
 import type { MiddlewareHandler } from "hono";
-import { isProduction } from "./config";
+import { isProduction } from "./config.js";
 
 // Fixed-window in-memory rate limiter (same behavior as before).
 // NOTE: state is per-process, so on Vercel serverless each instance counts

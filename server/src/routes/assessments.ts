@@ -1,9 +1,9 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { prisma } from "../lib/prisma";
-import { getAuthUser, requirePermission } from "../lib/auth";
-import { audit } from "../lib/audit";
-import { badRequest, notFound, unauthenticated, zodDetails } from "../lib/errors";
+import { prisma } from "../lib/prisma.js";
+import { getAuthUser, requirePermission } from "../lib/auth.js";
+import { audit } from "../lib/audit.js";
+import { badRequest, notFound, unauthenticated, zodDetails } from "../lib/errors.js";
 
 export const assessments = new Hono();
 

@@ -1,6 +1,6 @@
 {
-  "buildCommand": "cd server && bun prisma migrate deploy && bun prisma generate && cd ../client && bun run build",
+  "buildCommand": "cd server && bun prisma migrate deploy && bun prisma generate && bun run typecheck && cd ../client && bun run build",
   "outputDirectory": "client/dist",
   "installCommand": "bun install",
-  "rewrites": []
+  "rewrites": [{ "source": "/((?!api/).*)", "destination": "/index.html" }]
 }

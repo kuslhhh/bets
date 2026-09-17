@@ -1,5 +1,5 @@
 import nodemailer from "nodemailer";
-import { getAppUrl, getSmtpConfig, isSmtpConfigured } from "./config";
+import { getAppUrl, getSmtpConfig, isSmtpConfigured } from "./config.js";
 
 // Generic SMTP via Nodemailer. If SMTP_HOST unset, log to console (dev).
 

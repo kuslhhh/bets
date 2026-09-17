@@ -1,6 +1,6 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "../generated/prisma/client.js";
 import { PrismaPg } from "@prisma/adapter-pg";
-import { getDatabaseUrl } from "./config";
+import { getDatabaseUrl } from "./config.js";
 
 // PrismaClient singleton — works under Bun hot-reload and Vercel Node.
 // Lazy init: constructing PrismaPg at import time would throw when

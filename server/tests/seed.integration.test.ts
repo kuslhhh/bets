@@ -1,15 +1,15 @@
 // Integration: seed content counts. Requires TEST_DATABASE_URL.
 import { describe, it, expect, beforeAll } from "vitest";
-import { getTestDbStatus } from "./helpers";
+import { getTestDbStatus } from "./helpers.js";
 
 const { hasDb, ci } = getTestDbStatus();
 if (!hasDb && ci) throw new Error("TEST_DATABASE_URL is required in CI — integration tests must run against the isolated finance_test database");
 
 describe.runIf(hasDb)("seed counts (integration)", () => {
-  let prisma: typeof import("../src/lib/prisma").prisma;
+  let prisma: typeof import("../src/lib/prisma.js").prisma;
 
   beforeAll(async () => {
-    ({ prisma } = await import("../src/lib/prisma"));
+    ({ prisma } = await import("../src/lib/prisma.js"));
   });
 
   it("has 2 roles and 14 permissions", async () => {

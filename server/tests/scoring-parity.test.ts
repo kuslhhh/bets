@@ -3,9 +3,9 @@
 // No shared package by design (see docs/TARGET_ARCHITECTURE.md) — this test
 // is the drift guard.
 import { describe, it, expect } from "vitest";
-import { getBand as serverBand } from "../src/lib/scoring/bands";
-import { EXPECTED as SERVER_EXPECTED } from "../src/lib/scoring/constants";
-import { getBand as clientBand, EXPECTED as CLIENT_EXPECTED } from "../../client/src/lib/bands";
+import { getBand as serverBand } from "../src/lib/scoring/bands.js";
+import { EXPECTED as SERVER_EXPECTED } from "../src/lib/scoring/constants.js";
+import { getBand as clientBand, EXPECTED as CLIENT_EXPECTED } from "../../client/src/lib/bands.js";
 
 describe("scoring parity (server authoritative, client mirror)", () => {
   it("band thresholds + labels match", () => {

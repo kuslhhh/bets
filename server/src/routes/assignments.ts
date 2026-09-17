@@ -3,11 +3,11 @@
 // validates requests, checks authZ, calls the service, and formats responses.
 import { Hono } from "hono";
 import { z } from "zod";
-import { prisma } from "../lib/prisma";
-import { getAuthUser, requirePermission } from "../lib/auth";
-import { audit } from "../lib/audit";
-import { badRequest, conflict, forbidden, notFound, unauthenticated, zodDetails } from "../lib/errors";
-import { parsePagination } from "../lib/pagination";
+import { prisma } from "../lib/prisma.js";
+import { getAuthUser, requirePermission } from "../lib/auth.js";
+import { audit } from "../lib/audit.js";
+import { badRequest, conflict, forbidden, notFound, unauthenticated, zodDetails } from "../lib/errors.js";
+import { parsePagination } from "../lib/pagination.js";
 import {
   ServiceError,
   getProgress,
@@ -18,8 +18,8 @@ import {
   saveResponses,
   clearResponses,
   submitAssignment,
-} from "../services/assignments.service";
-import { rateLimit } from "../lib/rate-limit";
+} from "../services/assignments.service.js";
+import { rateLimit } from "../lib/rate-limit.js";
 
 export const assignments = new Hono();
 

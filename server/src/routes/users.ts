@@ -1,11 +1,11 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { prisma } from "../lib/prisma";
-import { requirePermission, revokeAllSessionsForUser } from "../lib/auth";
-import { audit } from "../lib/audit";
-import { badRequest, conflict, notFound, zodDetails } from "../lib/errors";
-import { parsePagination } from "../lib/pagination";
-import { passwordSchema, hashPassword } from "../lib/password";
+import { prisma } from "../lib/prisma.js";
+import { requirePermission, revokeAllSessionsForUser } from "../lib/auth.js";
+import { audit } from "../lib/audit.js";
+import { badRequest, conflict, notFound, zodDetails } from "../lib/errors.js";
+import { parsePagination } from "../lib/pagination.js";
+import { passwordSchema, hashPassword } from "../lib/password.js";
 
 export const users = new Hono();
 

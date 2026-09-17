@@ -1,9 +1,9 @@
 import { Hono } from "hono";
-import { prisma } from "../lib/prisma";
-import { getAuthUser } from "../lib/auth";
-import { unauthenticated } from "../lib/errors";
-import { getBand } from "../lib/scoring/bands";
-import { EXPECTED } from "../lib/scoring/constants";
+import { prisma } from "../lib/prisma.js";
+import { getAuthUser } from "../lib/auth.js";
+import { unauthenticated } from "../lib/errors.js";
+import { getBand } from "../lib/scoring/bands.js";
+import { EXPECTED } from "../lib/scoring/constants.js";
 
 export const dashboard = new Hono();
 
@@ -19,7 +19,7 @@ dashboard.get("/", async (c) => {
   let targetUserId = user.id;
   if (requestedUserId && requestedUserId !== user.id) {
     if (!user.permissions.includes("results.individual.view") && !user.permissions.includes("results.org.view")) {
-      const { forbidden } = await import("../lib/errors");
+      const { forbidden } = await import("../lib/errors.js");
       return forbidden(c);
     }
     targetUserId = requestedUserId;
@@ -212,7 +212,7 @@ dashboard.get("/categories", async (c) => {
     // scope check: if not owner and not admin individual view, still allow if self?
     const isOwner = result.assignment.userId === user.id;
     if (!isOwner && !user.permissions.includes("results.individual.view") && !user.permissions.includes("results.org.view")) {
-      const { notFound } = await import("../lib/errors");
+      const { notFound } = await import("../lib/errors.js");
       return notFound(c);
     }
     const categories = result.categoryScores.map((cs: any) => ({

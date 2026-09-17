@@ -1,6 +1,6 @@
 import { sign, verify } from "hono/jwt";
 import type { AuthUser } from "@/types/contract";
-import { getAuthSecret, requireAuthSecret } from "./config";
+import { getAuthSecret, requireAuthSecret } from "./config.js";
 
 export interface AccessTokenClaims {
   id: string;

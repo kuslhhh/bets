@@ -2,22 +2,22 @@ import { Hono } from "hono";
 import { createHash, randomBytes, randomInt } from "node:crypto";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import { z } from "zod";
-import { prisma } from "../lib/prisma";
+import { prisma } from "../lib/prisma.js";
 import {
   createSession,
   destroySession,
   SESSION_COOKIE,
   SESSION_MAX_AGE,
   getAuthUser,
-} from "../lib/auth";
-import { audit } from "../lib/audit";
-import { PASSWORD_RESET_OTP_TTL_MINUTES } from "../lib/email";
-import { isSmtpConfigured, isProduction } from "../lib/config";
-import { MailService } from "../services/mail.service";
-import { mintAccessJWT } from "../lib/jwt";
-import { badRequest, conflict, unauthenticated, locked, zodDetails } from "../lib/errors";
-import { rateLimit } from "../lib/rate-limit";
-import { passwordSchema, hashPassword, verifyPassword } from "../lib/password";
+} from "../lib/auth.js";
+import { audit } from "../lib/audit.js";
+import { PASSWORD_RESET_OTP_TTL_MINUTES } from "../lib/email.js";
+import { isSmtpConfigured, isProduction } from "../lib/config.js";
+import { MailService } from "../services/mail.service.js";
+import { mintAccessJWT } from "../lib/jwt.js";
+import { badRequest, conflict, unauthenticated, locked, zodDetails } from "../lib/errors.js";
+import { rateLimit } from "../lib/rate-limit.js";
+import { passwordSchema, hashPassword, verifyPassword } from "../lib/password.js";
 
 export const auth = new Hono();
 

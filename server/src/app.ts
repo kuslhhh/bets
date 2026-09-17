@@ -1,16 +1,16 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
-import { health } from "./routes/health";
-import { auth } from "./routes/auth";
-import { users, handleListRoles, handleListPermissions } from "./routes/users";
-import { assessments } from "./routes/assessments";
-import { questions } from "./routes/questions";
-import { assignments } from "./routes/assignments";
-import { results } from "./routes/results";
-import { dashboard } from "./routes/dashboard";
-import { reports } from "./routes/reports";
-import { requirePermission } from "./lib/auth";
+import { health } from "./routes/health.js";
+import { auth } from "./routes/auth.js";
+import { users, handleListRoles, handleListPermissions } from "./routes/users.js";
+import { assessments } from "./routes/assessments.js";
+import { questions } from "./routes/questions.js";
+import { assignments } from "./routes/assignments.js";
+import { results } from "./routes/results.js";
+import { dashboard } from "./routes/dashboard.js";
+import { reports } from "./routes/reports.js";
+import { requirePermission } from "./lib/auth.js";
 
 const app = new Hono().basePath("/api");
 

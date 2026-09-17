@@ -2,9 +2,9 @@
 // in routes/assignments.ts). Single implementation for the previously duplicated
 // save-responses and submit paths (assignment-id vs assessment-id aliases).
 
-import { prisma } from "../lib/prisma";
-import { computeCategoryBreakdown, computeOverallSplit } from "../lib/scoring/engine";
-import { SCORING_VERSION } from "../lib/scoring/constants";
+import { prisma } from "../lib/prisma.js";
+import { computeCategoryBreakdown, computeOverallSplit } from "../lib/scoring/engine.js";
+import { SCORING_VERSION } from "../lib/scoring/constants.js";
 
 // --- Typed errors (routes map these to the {error,details} envelope) ---
 

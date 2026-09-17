@@ -1,5 +1,5 @@
 import { handle } from "hono/vercel";
-import app from "../server/src/app";
+import app from "../server/src/app.js";
 
 // Vercel serverless wrapper (Node.js runtime). The Hono app itself lives in
 // server/src and is runtime-agnostic; local dev uses Bun (server/src/index.ts).

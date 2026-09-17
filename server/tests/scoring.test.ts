@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { avg2, computeOverallSplit } from "../src/lib/scoring/engine";
-import { getBand } from "../src/lib/scoring/bands";
-import { EXPECTED } from "../src/lib/scoring/constants";
+import { avg2, computeOverallSplit } from "../src/lib/scoring/engine.js";
+import { getBand } from "../src/lib/scoring/bands.js";
+import { EXPECTED } from "../src/lib/scoring/constants.js";
 
 describe("avg2", () => {
   it("rounds half-up 2dp", () => {

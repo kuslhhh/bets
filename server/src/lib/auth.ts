@@ -1,9 +1,9 @@
 import { randomBytes } from "node:crypto";
 import { getCookie } from "hono/cookie";
 import type { MiddlewareHandler } from "hono";
-import { prisma } from "./prisma";
-import { unauthenticated, forbidden } from "./errors";
-import { verifyAccessJWT } from "./jwt";
+import { prisma } from "./prisma.js";
+import { unauthenticated, forbidden } from "./errors.js";
+import { verifyAccessJWT } from "./jwt.js";
 import type { AuthUser } from "@/types/contract";
 
 // --- Sessions (cookie DB sessions) ---

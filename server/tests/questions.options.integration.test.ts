@@ -1,21 +1,21 @@
 // Integration: PATCH /api/questions/:id option diff keeps response references valid.
 // Requires TEST_DATABASE_URL (skipped otherwise — run with env-file, see docs/REFACTOR_PLAN.md).
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { getTestDbStatus } from "./helpers";
+import { getTestDbStatus } from "./helpers.js";
 
 const { hasDb, ci } = getTestDbStatus();
 if (!hasDb && ci) throw new Error("TEST_DATABASE_URL is required in CI — integration tests must run against the isolated finance_test database");
 
 describe.runIf(hasDb)("question option diff (integration)", () => {
-  let prisma: typeof import("../src/lib/prisma").prisma;
-  let app: typeof import("../src/app").default;
+  let prisma: typeof import("../src/lib/prisma.js").prisma;
+  let app: typeof import("../src/app.js").default;
   const ids: { user?: string; session?: string; assessment?: string; question?: string } = {};
   const email = `optdiff-${Date.now()}@example.com`;
   const token = `test-session-${Date.now()}`;
 
   beforeAll(async () => {
-    ({ prisma } = await import("../src/lib/prisma"));
-    ({ default: app } = await import("../src/app"));
+    ({ prisma } = await import("../src/lib/prisma.js"));
+    ({ default: app } = await import("../src/app.js"));
     const adminRole = await prisma.role.findUnique({ where: { code: "ADMIN" } });
     if (!adminRole) throw new Error("ADMIN role missing — run migrations");
     const user = await prisma.user.create({

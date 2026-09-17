@@ -1,8 +1,8 @@
 import { Hono } from "hono";
-import { prisma } from "../lib/prisma";
-import { getAuthUser } from "../lib/auth";
-import { audit } from "../lib/audit";
-import { unauthenticated, forbidden } from "../lib/errors";
+import { prisma } from "../lib/prisma.js";
+import { getAuthUser } from "../lib/auth.js";
+import { audit } from "../lib/audit.js";
+import { unauthenticated, forbidden } from "../lib/errors.js";
 
 export const reports = new Hono();
 

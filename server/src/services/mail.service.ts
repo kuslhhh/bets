@@ -1,6 +1,6 @@
 import nodemailer from "nodemailer";
-import { getSmtpConfig, isSmtpConfigured } from "../lib/config";
-import { passwordResetEmail, passwordResetLink, passwordResetOtpEmail, type MailMessage } from "../lib/email";
+import { getSmtpConfig, isSmtpConfigured } from "../lib/config.js";
+import { passwordResetEmail, passwordResetLink, passwordResetOtpEmail, type MailMessage } from "../lib/email.js";
 
 export class MailService {
   private getTransporter() {

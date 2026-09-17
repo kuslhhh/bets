@@ -1,9 +1,9 @@
 import { Hono } from "hono";
-import { prisma } from "../lib/prisma";
-import { getAuthUser } from "../lib/auth";
-import { unauthenticated, notFound } from "../lib/errors";
-import { getBand } from "../lib/scoring/bands";
-import { EXPECTED } from "../lib/scoring/constants";
+import { prisma } from "../lib/prisma.js";
+import { getAuthUser } from "../lib/auth.js";
+import { unauthenticated, notFound } from "../lib/errors.js";
+import { getBand } from "../lib/scoring/bands.js";
+import { EXPECTED } from "../lib/scoring/constants.js";
 
 export const results = new Hono();
 

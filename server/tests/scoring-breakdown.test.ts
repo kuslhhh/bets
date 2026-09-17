@@ -2,7 +2,7 @@
 // The breakdown lives in lib/scoring/engine.ts so it stays importable
 // without a database connection.
 import { describe, it, expect } from "vitest";
-import { computeCategoryBreakdown, computeOverallSplit } from "../src/lib/scoring/engine";
+import { computeCategoryBreakdown, computeOverallSplit } from "../src/lib/scoring/engine.js";
 
 describe("computeCategoryBreakdown", () => {
   const cats = [

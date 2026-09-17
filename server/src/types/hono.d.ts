@@ -1,4 +1,4 @@
-import type { AuthUser } from "./contract";
+import type { AuthUser } from "./contract.js";
 
 declare module "hono" {
   interface ContextVariableMap {

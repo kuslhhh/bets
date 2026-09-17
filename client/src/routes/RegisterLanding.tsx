@@ -200,8 +200,7 @@ export function RegisterLandingPage() {
           <div className="min-w-0 bg-[#f7f7f8] p-6 sm:p-8 lg:p-8">
             <div className="rounded-[6px] border border-[#e8e8ea] bg-white shadow-[0_6px_24px_rgba(0,0,0,0.10)] p-6 sm:p-7">
               <div className="flex flex-col items-center">
-                <img src="/favicon.svg" alt="BETs" className="w-14 h-14 object-contain" />
-                <p className="mt-1 text-[15px] font-bold tracking-wide text-[var(--bets-primary)]">BETs</p>
+                <img src="/logo.svg" alt="BETs" className="h-14 w-auto object-contain" />
               </div>
               {mode === "forgot" ? (
                 <div className="mt-5">
