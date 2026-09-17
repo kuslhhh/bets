@@ -1,10 +1,8 @@
 import { useEffect, useState } from "react";
-import { apiFetch, API_BASE } from "../lib/api";
+import { apiFetch, API_BASE, getAccessToken } from "../lib/api";
 import { toMessage } from "../lib/errors";
-import { getAccessToken } from "../lib/api";
 import { Card, CardHeader, CardTitle, CardContent } from "../components/ui/card";
 import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
 import { Badge } from "../components/ui/badge";
 
 type Row = {
@@ -22,14 +20,12 @@ export function ReportsPage() {
   const [data, setData] = useState<Row[]>([]);
   const [total, setTotal] = useState(0);
   const [err, setErr] = useState<string | null>(null);
-  const [assessmentId, setAssessmentId] = useState("");
   const [period, setPeriod] = useState("");
 
   const fetchReports = async () => {
     setErr(null);
     try {
       const qs = new URLSearchParams();
-      if (assessmentId) qs.set("assessmentId", assessmentId);
       if (period) qs.set("period", period);
       const res = (await apiFetch<{ data: Row[]; total: number }>(`/reports${qs.toString() ? `?${qs}` : ""}`)) as { data: Row[]; total: number };
       setData(res.data);
@@ -48,7 +44,6 @@ export function ReportsPage() {
     try {
       const token = getAccessToken();
       const qs = new URLSearchParams({ format: "csv" });
-      if (assessmentId) qs.set("assessmentId", assessmentId);
       if (period) qs.set("period", period);
       const res = await fetch(`${API_BASE}/reports?${qs}`, {
         credentials: "include",
@@ -70,14 +65,10 @@ export function ReportsPage() {
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-bold text-[var(--bets-text-dark)]">Reports</h1>
-      <p className="text-sm text-[var(--bets-text-muted)]">All submitted assessments.</p>
+      <p className="text-sm text-[var(--bets-text-muted)]">All submissions — single assessment.</p>
 
       <Card>
         <CardContent className="pt-4 flex flex-wrap gap-3 items-end">
-          <div>
-            <label className="text-xs text-[var(--bets-text-muted)]">Assessment</label>
-            <Input value={assessmentId} onChange={(e) => setAssessmentId(e.target.value)} placeholder="Assessment ID" className="w-64" />
-          </div>
           <div>
             <label className="text-xs text-[var(--bets-text-muted)]">Period</label>
             <select value={period} onChange={(e) => setPeriod(e.target.value)} className="h-9 rounded-md border bg-white px-3 text-sm border-[var(--color-border-strong)]">
@@ -103,7 +94,6 @@ export function ReportsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-[var(--bets-text-muted)] border-b border-[var(--color-border)]">
-                  <th className="py-2">Assessment</th>
                   <th className="py-2">User</th>
                   <th className="py-2">Submitted</th>
                   <th className="py-2">Self</th>
@@ -114,7 +104,6 @@ export function ReportsPage() {
               <tbody>
                 {data.map((r) => (
                   <tr key={r.assignmentId} className="border-b border-[var(--color-border)] last:border-0">
-                    <td className="py-2 text-[var(--bets-text)]">{r.assessmentTitle}</td>
                     <td className="py-2 text-[var(--bets-text-muted)]">{r.userEmail ?? "—"} {r.userName ? `· ${r.userName}` : ""}</td>
                     <td className="py-2 text-[var(--bets-text-muted)]">{r.submittedAt ? new Date(r.submittedAt).toLocaleString() : "—"}</td>
                     <td className="py-2 font-medium text-[var(--bets-primary)]">{r.overallSelf?.toFixed(2) ?? "—"}</td>
@@ -122,7 +111,7 @@ export function ReportsPage() {
                     <td className="py-2 font-semibold text-[var(--bets-text-dark)]">{r.overallCombined?.toFixed(2) ?? "—"}</td>
                   </tr>
                 ))}
-                {data.length === 0 && <tr><td colSpan={6} className="py-6 text-center text-[var(--bets-text-muted)]">No submitted assignments for filter.</td></tr>}
+                {data.length === 0 && <tr><td colSpan={5} className="py-6 text-center text-[var(--bets-text-muted)]">No submitted assignments for filter.</td></tr>}
               </tbody>
             </table>
           </div>

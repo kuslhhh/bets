@@ -177,13 +177,13 @@ export function DashboardPage() {
                       {data.organisation.usersSummary!.map((u) => (
                         <tr key={u.userId} className="border-b border-[var(--color-border)] last:border-0 hover:bg-[#fcf9ff]">
                           <td className="py-2 font-medium text-[var(--bets-text)]">
-                            <Link to={`/admin/users/${u.userId}`} className="text-[var(--bets-primary)] hover:underline">{u.name}</Link>
+                            <Link to={`/admin/dashboard/${u.userId}`} className="text-[var(--bets-primary)] hover:underline">{u.name}</Link>
                           </td>
                           <td className="py-2 text-[var(--bets-text-muted)]">{u.email}</td>
                           <td className="py-2"><Badge className="bg-[#f5eefb] text-[var(--bets-primary)]">{u.fillCount} {u.fillCount === 1 ? "fill" : "fills"}</Badge></td>
                           <td className="py-2 font-semibold text-[var(--bets-primary)]">{u.latestOverallCombined?.toFixed(2) ?? "—"}</td>
                           <td className="py-2 text-[var(--bets-text-muted)]">{u.latestSubmittedAt ? new Date(u.latestSubmittedAt).toLocaleString() : "—"}</td>
-                          <td className="py-2"><Link to={`/admin/users/${u.userId}`} className="text-[var(--bets-primary)] hover:underline text-xs">View fills →</Link></td>
+                          <td className="py-2"><Link to={`/admin/dashboard/${u.userId}`} className="text-[var(--bets-primary)] hover:underline text-xs">View fills →</Link></td>
                         </tr>
                       ))}
                     </tbody>

@@ -30,7 +30,7 @@ export function TakingPage() {
 
   if (!id) return <div className="p-8 text-[var(--bets-text-muted)]">Missing assignment id</div>;
   if (!assignment && !err) return <div className="p-8 text-[var(--bets-text-muted)]">Loading…</div>;
-  if (err && !assignment) return <div className="p-8 text-red-600 bg-red-50 border border-red-200 rounded-md">{err} <Link to="/my-assessments" className="underline text-[var(--bets-primary)]">Back</Link></div>;
+  if (err && !assignment) return <div className="p-8 text-red-600 bg-red-50 border border-red-200 rounded-md">{err} <Link to="/available" className="underline text-[var(--bets-primary)]">Back</Link></div>;
 
   const s1 = sections[0]?.title ?? "Section 1: About self";
   const s2 = sections[1]?.title ?? "Section 2: About organisation";
@@ -149,7 +149,7 @@ export function TakingPage() {
         </Button>
         <span className="text-xs text-[var(--bets-text-muted)]">{saving ? "Saving draft…" : dirty ? "Unsaved changes" : "Draft autosaves"}</span>
         <div className="ml-auto flex gap-2">
-          <Button variant="ghost" onClick={() => nav("/my-assessments")}>Back</Button>
+          <Button variant="ghost" onClick={() => nav("/available")}>Back</Button>
           <Button onClick={handleSubmit} disabled={submitting || pct < 100}>
             {submitting ? "Submitting…" : "Submit"}
           </Button>
