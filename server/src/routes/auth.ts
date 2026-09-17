@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomInt } from "node:crypto";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
@@ -11,7 +11,9 @@ import {
   getAuthUser,
 } from "../lib/auth";
 import { audit } from "../lib/audit";
-import { sendPasswordResetEmail, PASSWORD_RESET_TOKEN_TTL_MINUTES } from "../lib/email";
+import { PASSWORD_RESET_OTP_TTL_MINUTES } from "../lib/email";
+import { isSmtpConfigured, isProduction } from "../lib/config";
+import { MailService } from "../services/mail.service";
 import { mintAccessJWT } from "../lib/jwt";
 import { badRequest, conflict, unauthenticated, locked, zodDetails } from "../lib/errors";
 import { rateLimit } from "../lib/rate-limit";
@@ -205,49 +207,82 @@ auth.post("/forgot-password", rateLimit({ windowMs: 60_000, max: 5, keyPrefix: "
   const email = parsed.data.email.toLowerCase().trim();
   const user = await prisma.user.findUnique({ where: { email } });
 
+  let devOtp: string | undefined;
   if (user) {
     // Invalidate prior tokens for this identifier.
     await prisma.verificationToken.deleteMany({ where: { identifier: `password-reset:${email}` } });
 
-    const token = randomBytes(32).toString("base64url");
-    const tokenHash = sha256Hex(token);
+    const otp = String(randomInt(100000, 1000000)); // 6-digit
+    devOtp = otp;
+    const tokenHash = sha256Hex(otp);
     await prisma.verificationToken.create({
       data: {
         identifier: `password-reset:${email}`,
         token: tokenHash,
-        expires: new Date(Date.now() + PASSWORD_RESET_TOKEN_TTL_MINUTES * 60_000),
+        expires: new Date(Date.now() + PASSWORD_RESET_OTP_TTL_MINUTES * 60_000),
       },
     });
 
-    await sendPasswordResetEmail(email, token);
+    // Dev: always log OTP to server console (visible when SMTP not configured)
+    console.log(`[otp:dev] password-reset OTP for ${email}: ${otp} (valid ${PASSWORD_RESET_OTP_TTL_MINUTES}m)`);
+    if (!isSmtpConfigured()) {
+      console.log(`[mail:dev] OTP for ${email}: ${otp}`);
+    }
+
+    try {
+      await new MailService().sendPasswordResetOtpEmail(email, otp);
+    } catch (err) {
+      console.error("[mail] failed to send password reset OTP", {
+        to: email,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return c.json({ error: "internal_error", details: "failed to send reset email" }, 500);
+    }
     await audit({ actorId: user.id, action: "auth.forgot_password", entity: "user", entityId: user.id });
   }
 
+  if (!isProduction() && devOtp) {
+    return c.json({ ok: true, devOtp });
+  }
   return c.json({ ok: true });
 });
 
 const resetPasswordSchema = z.object({
-  token: z.string().min(10),
+  token: z.string().min(6).optional(),
+  email: z.string().email().optional(),
+  otp: z.string().min(4).max(10).optional(),
   newPassword: passwordSchema,
+}).refine((v) => (v.token && v.token.length >= 6) || (v.email && v.otp), {
+  message: "token or email+otp and a strong newPassword are required",
 });
 
 auth.post("/reset-password", rateLimit({ windowMs: 60_000, max: 5, keyPrefix: "reset" }), async (c) => {
   const parsed = resetPasswordSchema.safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return badRequest(c, "token and a strong newPassword are required");
+  if (!parsed.success) return badRequest(c, "token or email+otp and a strong newPassword are required");
 
-  const { token, newPassword } = parsed.data;
-  const tokenHash = sha256Hex(token);
+  const { token, email, otp, newPassword } = parsed.data;
+  let match: { identifier: string; token: string; expires: Date } | null = null;
 
-  const match = await prisma.verificationToken.findFirst({ where: { token: tokenHash } });
-  if (!match || match.expires < new Date()) {
-    return badRequest(c, "invalid or expired reset token");
+  if (token) {
+    const tokenHash = sha256Hex(token);
+    match = await prisma.verificationToken.findFirst({ where: { token: tokenHash } });
+  } else if (email && otp) {
+    const normalizedEmail = email.toLowerCase().trim();
+    const otpHash = sha256Hex(otp.trim());
+    match = await prisma.verificationToken.findFirst({
+      where: { identifier: `password-reset:${normalizedEmail}`, token: otpHash },
+    });
   }
 
-  const email = match.identifier.replace(/^password-reset:/, "");
-  const user = await prisma.user.findUnique({ where: { email } });
-  if (!user) return badRequest(c, "invalid or expired reset token");
+  if (!match || match.expires < new Date()) {
+    return badRequest(c, "invalid or expired OTP");
+  }
 
-  const passwordHash = await hashPassword(newPassword);
+  const matchedEmail = match.identifier.replace(/^password-reset:/, "");
+  const user = await prisma.user.findUnique({ where: { email: matchedEmail } });
+  if (!user) return badRequest(c, "invalid or expired OTP");
+
+  const passwordHash = await hashPassword(newPassword!);
   await prisma.$transaction([
     prisma.user.update({
       where: { id: user.id },

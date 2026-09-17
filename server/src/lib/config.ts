@@ -70,7 +70,7 @@ export function getSmtpConfig(): SmtpConfig {
     port: Number.isNaN(port) ? 587 : port,
     secure: readEnv("SMTP_SECURE") === "true" || port === 465,
     user: readEnv("SMTP_USER"),
-    pass: readEnv("SMTP_PASS"),
+    pass: readEnv("SMTP_PASSWORD") ?? readEnv("SMTP_PASS"),
     from: readEnv("SMTP_FROM") ?? "no-reply@localhost",
   };
 }
