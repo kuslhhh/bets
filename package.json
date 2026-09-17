@@ -21,7 +21,6 @@
     "test": "bun --cwd server test"
   },
   "devDependencies": {
-    "@prisma/client": "^7.10.0",
     "@types/bun": "latest",
     "@types/node": "^22.0.0",
     "hono": "^4.13.7"
