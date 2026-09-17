@@ -14,5 +14,5 @@
       "@/*": ["server/src/*"]
     }
   },
-  "include": ["./**/*.ts"]
+  "include": ["./**/*.ts", "../server/src/types/**/*.d.ts"]
 }
