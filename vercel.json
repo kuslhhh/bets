@@ -1,5 +1,5 @@
 {
-  "buildCommand": "bun --cwd server prisma generate && bun --cwd client run build",
+  "buildCommand": "cd server && bun prisma generate && cd ../client && bun run build",
   "outputDirectory": "client/dist",
   "installCommand": "bun install",
   "rewrites": [
