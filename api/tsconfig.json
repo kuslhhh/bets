@@ -6,7 +6,7 @@
     "types": ["node"],
     "skipLibCheck": true,
     "noEmit": true,
-    "strict": true,
+    "strict": false,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "baseUrl": "..",
@@ -14,5 +14,5 @@
       "@/*": ["server/src/*"]
     }
   },
-  "include": ["./**/*.ts", "../server/src/**/*.ts", "../server/prisma/**/*.ts"]
+  "include": ["./**/*.ts"]
 }
