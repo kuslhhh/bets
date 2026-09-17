@@ -1,4 +1,5 @@
 import type { MiddlewareHandler } from "hono";
+import { isProduction } from "./config";
 
 // Fixed-window in-memory rate limiter (same behavior as before).
 // NOTE: state is per-process, so on Vercel serverless each instance counts
@@ -17,6 +18,7 @@ function prune(now: number): void {
 
 export function rateLimit({ windowMs = 60_000, max = 10, keyPrefix = "global" }: { windowMs?: number; max?: number; keyPrefix?: string }): MiddlewareHandler {
   return async (c, next) => {
+    if (!isProduction()) return next();
     const ip = c.req.header("x-forwarded-for") ?? c.req.header("x-real-ip") ?? "unknown";
     const key = `${keyPrefix}:${ip}`;
     const now = Date.now();

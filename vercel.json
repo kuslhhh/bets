@@ -1,0 +1,10 @@
+{
+  "buildCommand": "bun install && bun --cwd server prisma generate && bun --cwd client run build",
+  "outputDirectory": "client/dist",
+  "installCommand": "bun install",
+  "framework": "vite",
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}

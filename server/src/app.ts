@@ -14,7 +14,19 @@ import { requirePermission } from "./lib/auth";
 
 const app = new Hono().basePath("/api");
 
-app.use("*", cors({ origin: ["http://localhost:5173", "http://localhost:3000"], credentials: true }));
+const allowedOrigins = ["http://localhost:5173", "http://localhost:3000", process.env.APP_URL, process.env.VITE_API_URL].filter(Boolean) as string[];
+app.use(
+  "*",
+  cors({
+    origin: (origin) => {
+      if (!origin) return allowedOrigins[0] ?? "*";
+      if (allowedOrigins.includes(origin)) return origin;
+      if (origin.endsWith(".vercel.app")) return origin;
+      return allowedOrigins[0] ?? origin;
+    },
+    credentials: true,
+  }),
+);
 app.use("*", secureHeaders());
 
 app.route("/health", health);
