@@ -2,7 +2,7 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- CreateTable
 CREATE TABLE "roles" (
-    "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+    "id" TEXT NOT NULL,
     "code" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "description" TEXT,
@@ -14,7 +14,7 @@ CREATE TABLE "roles" (
 
 -- CreateTable
 CREATE TABLE "permissions" (
-    "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+    "id" TEXT NOT NULL,
     "code" TEXT NOT NULL,
     "description" TEXT,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -27,14 +27,14 @@ CREATE TABLE "role_permissions" (
     "role_id" TEXT NOT NULL,
     "permission_id" TEXT NOT NULL,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "role_permissions_pkey" PRIMARY KEY ("role_id","permission_id")
 );
 
 -- CreateTable
 CREATE TABLE "users" (
-    "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+    "id" TEXT NOT NULL,
     "email" TEXT NOT NULL,
     "password_hash" TEXT NOT NULL,
     "name" TEXT NOT NULL,
@@ -43,6 +43,13 @@ CREATE TABLE "users" (
     "failed_login_attempts" INTEGER NOT NULL DEFAULT 0,
     "locked_until" TIMESTAMP(3),
     "last_login_at" TIMESTAMP(3),
+    "phone_number" VARCHAR(20),
+    "designation" VARCHAR(100),
+    "company_name" VARCHAR(200),
+    "industry_type" VARCHAR(100),
+    "nature_of_work" VARCHAR(100),
+    "revenue_bracket" VARCHAR(50),
+    "product" VARCHAR(200),
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
 
@@ -51,7 +58,7 @@ CREATE TABLE "users" (
 
 -- CreateTable
 CREATE TABLE "sessions" (
-    "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+    "id" TEXT NOT NULL,
     "session_token" TEXT NOT NULL,
     "user_id" TEXT NOT NULL,
     "expires" TIMESTAMP(3) NOT NULL,
@@ -70,7 +77,7 @@ CREATE TABLE "verification_tokens" (
 
 -- CreateTable
 CREATE TABLE "assessments" (
-    "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+    "id" TEXT NOT NULL,
     "type" TEXT NOT NULL DEFAULT 'FINANCIAL_MATURITY',
     "status" TEXT NOT NULL DEFAULT 'DRAFT',
     "title" TEXT NOT NULL,
@@ -87,7 +94,7 @@ CREATE TABLE "assessments" (
 
 -- CreateTable
 CREATE TABLE "sections" (
-    "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+    "id" TEXT NOT NULL,
     "assessment_id" TEXT NOT NULL,
     "order" INTEGER NOT NULL,
     "title" TEXT NOT NULL,
@@ -101,7 +108,7 @@ CREATE TABLE "sections" (
 
 -- CreateTable
 CREATE TABLE "categories" (
-    "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+    "id" TEXT NOT NULL,
     "section_id" TEXT NOT NULL,
     "order" INTEGER NOT NULL,
     "name" TEXT NOT NULL,
@@ -115,7 +122,7 @@ CREATE TABLE "categories" (
 
 -- CreateTable
 CREATE TABLE "questions" (
-    "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+    "id" TEXT NOT NULL,
     "assessment_id" TEXT NOT NULL,
     "source_number" TEXT,
     "type" TEXT NOT NULL DEFAULT 'SINGLE_SELECT',
@@ -136,7 +143,7 @@ CREATE TABLE "questions" (
 
 -- CreateTable
 CREATE TABLE "question_options" (
-    "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+    "id" TEXT NOT NULL,
     "question_id" TEXT NOT NULL,
     "order" INTEGER NOT NULL,
     "label" TEXT NOT NULL,
@@ -150,7 +157,7 @@ CREATE TABLE "question_options" (
 
 -- CreateTable
 CREATE TABLE "assessment_assignments" (
-    "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+    "id" TEXT NOT NULL,
     "assessment_id" TEXT NOT NULL,
     "user_id" TEXT NOT NULL,
     "status" TEXT NOT NULL DEFAULT 'ASSIGNED',
@@ -167,7 +174,7 @@ CREATE TABLE "assessment_assignments" (
 
 -- CreateTable
 CREATE TABLE "responses" (
-    "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+    "id" TEXT NOT NULL,
     "assignment_id" TEXT NOT NULL,
     "question_id" TEXT NOT NULL,
     "question_option_id" TEXT NOT NULL,
@@ -181,7 +188,7 @@ CREATE TABLE "responses" (
 
 -- CreateTable
 CREATE TABLE "text_answers" (
-    "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+    "id" TEXT NOT NULL,
     "assignment_id" TEXT NOT NULL,
     "question_id" TEXT NOT NULL,
     "slot_index" INTEGER NOT NULL,
@@ -194,10 +201,11 @@ CREATE TABLE "text_answers" (
 
 -- CreateTable
 CREATE TABLE "assessment_results" (
-    "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+    "id" TEXT NOT NULL,
     "assignment_id" TEXT NOT NULL,
     "overall_self" DECIMAL(5,2),
     "overall_org" DECIMAL(5,2),
+    "overall_combined" DECIMAL(5,2),
     "min_category_score" DECIMAL(5,2),
     "max_category_score" DECIMAL(5,2),
     "scoring_version" TEXT NOT NULL,
@@ -209,7 +217,7 @@ CREATE TABLE "assessment_results" (
 
 -- CreateTable
 CREATE TABLE "category_scores" (
-    "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+    "id" TEXT NOT NULL,
     "result_id" TEXT NOT NULL,
     "category_id" TEXT NOT NULL,
     "average_score" DECIMAL(5,2) NOT NULL,
@@ -222,7 +230,7 @@ CREATE TABLE "category_scores" (
 
 -- CreateTable
 CREATE TABLE "audit_logs" (
-    "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
+    "id" TEXT NOT NULL,
     "actor_id" TEXT,
     "action" TEXT NOT NULL,
     "entity" TEXT NOT NULL,

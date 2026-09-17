@@ -235,8 +235,8 @@ VALUES
   ('opt_s1_5_c', 'q_s1_5', 3, 'c', 'I don''t feel it is important to know it', 50, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
   ('opt_s1_5_d', 'q_s1_5', 4, 'd', 'I think, it is not applicable for me', 25, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
   -- S1-Q6
-  ('opt_s1_6_a', 'q_s1_6', 1, 'a', 'I take appropriate actions…', 100, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('opt_s1_6_b', 'q_s1_6', 2, 'b', 'Sometimes, I take actions…', 75, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+  ('opt_s1_6_a', 'q_s1_6', 1, 'a', 'I take appropriate actions to improve organisational performance based on interpretation of financial statements', 100, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+  ('opt_s1_6_b', 'q_s1_6', 2, 'b', 'Sometimes, I take actions to improve organisational performance based on interpretation of financial statements', 75, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
   ('opt_s1_6_c', 'q_s1_6', 3, 'c', 'I don''t feel it is needed', 50, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
   ('opt_s1_6_d', 'q_s1_6', 4, 'd', 'I think, it is not applicable for me', 25, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
   -- S1-Q7
@@ -255,23 +255,23 @@ VALUES
   ('opt_s2_2_c', 'q_s2_2', 3, 'c', 'They are not aware', 50, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
   ('opt_s2_2_d', 'q_s2_2', 4, 'd', 'I think, they need not to know it', 25, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
   -- S2-Q3
-  ('opt_s2_3_a', 'q_s2_3', 1, 'a', '…evaluate financial health of organisation using financial statements', 100, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('opt_s2_3_b', 'q_s2_3', 2, 'b', 'Some of top management and decision makers can partially evaluate…', 75, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+  ('opt_s2_3_a', 'q_s2_3', 1, 'a', 'Top management and decision makers evaluate financial health of organisation using financial statements', 100, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+  ('opt_s2_3_b', 'q_s2_3', 2, 'b', 'Some of top management and decision makers can partially evaluate financial health of organisation using financial statements', 75, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
   ('opt_s2_3_c', 'q_s2_3', 3, 'c', 'They are not aware', 50, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
   ('opt_s2_3_d', 'q_s2_3', 4, 'd', 'I think, they need not to know it', 25, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
   -- S2-Q4
-  ('opt_s2_4_a', 'q_s2_4', 1, 'a', '…know inter linkages between financial statements', 100, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('opt_s2_4_b', 'q_s2_4', 2, 'b', 'Some … know partially inter linkages between financial statements', 75, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+  ('opt_s2_4_a', 'q_s2_4', 1, 'a', 'Top management and decision makers know inter linkages between financial statements', 100, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+  ('opt_s2_4_b', 'q_s2_4', 2, 'b', 'Some of top management and decision makers know partially inter linkages between financial statements', 75, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
   ('opt_s2_4_c', 'q_s2_4', 3, 'c', 'They are not aware', 50, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
   ('opt_s2_4_d', 'q_s2_4', 4, 'd', 'I think, they need not to know it', 25, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
   -- S2-Q5
-  ('opt_s2_5_a', 'q_s2_5', 1, 'a', '…are aware of how their decisions are reflected in financial statements', 100, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('opt_s2_5_b', 'q_s2_5', 2, 'b', '…are not aware of how their decisions are reflected in financial statements', 75, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+  ('opt_s2_5_a', 'q_s2_5', 1, 'a', 'Top management and decision makers are aware of how their decisions are reflected in financial statements', 100, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+  ('opt_s2_5_b', 'q_s2_5', 2, 'b', 'Top management and decision makers are not aware of how their decisions are reflected in financial statements', 75, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
   ('opt_s2_5_c', 'q_s2_5', 3, 'c', 'They don''t feel it is important to know it', 50, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
   ('opt_s2_5_d', 'q_s2_5', 4, 'd', 'I think, they need not to know it', 25, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
   -- S2-Q6
-  ('opt_s2_6_a', 'q_s2_6', 1, 'a', '…take appropriate actions…', 100, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('opt_s2_6_b', 'q_s2_6', 2, 'b', 'Sometimes, …take actions…', 75, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+  ('opt_s2_6_a', 'q_s2_6', 1, 'a', 'Top management and decision makers take appropriate actions to improve organisational performance based on interpretation of financial statements', 100, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+  ('opt_s2_6_b', 'q_s2_6', 2, 'b', 'Sometimes, top management and decision makers take actions to improve organisational performance based on interpretation of financial statements', 75, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
   ('opt_s2_6_c', 'q_s2_6', 3, 'c', 'They don''t feel it is needed', 50, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
   ('opt_s2_6_d', 'q_s2_6', 4, 'd', 'I think, they need not to know it', 25, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
   -- S2-Q7
