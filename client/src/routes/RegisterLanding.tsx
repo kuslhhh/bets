@@ -5,6 +5,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { apiFetch } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { toMessage } from "../lib/errors";
 import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
 import meterImg from "../assets/meter.png";
@@ -28,13 +29,33 @@ type FormValues = z.infer<typeof schema>;
 const loginSchema = z.object({ email: z.string().min(3).max(254), password: z.string().min(1) });
 type LoginValues = z.infer<typeof loginSchema>;
 
+const forgotSchema = z.object({ email: z.string().min(3).max(254).email() });
+type ForgotValues = z.infer<typeof forgotSchema>;
+
+const otpResetSchema = z
+  .object({
+    otp: z.string().min(4).max(10),
+    newPassword: z.string().min(8).regex(/[A-Z]/, "must contain uppercase").regex(/[a-z]/, "must contain lowercase").regex(/[0-9]/, "must contain digit"),
+    confirm: z.string().min(1),
+  })
+  .refine((v) => v.newPassword === v.confirm, { message: "passwords do not match", path: ["confirm"] });
+type OtpResetValues = z.infer<typeof otpResetSchema>;
+
 export function RegisterLandingPage() {
   const nav = useNavigate();
   const { user, setAuth } = useAuth();
   const [err, setErr] = useState<string | null>(null);
   const [ok, setOk] = useState(false);
-  const [mode, setMode] = useState<"register" | "login">("register");
+  const [mode, setMode] = useState<"register" | "login" | "forgot">("register");
   const [loginErr, setLoginErr] = useState<string | null>(null);
+  const [forgotErr, setForgotErr] = useState<string | null>(null);
+  const [forgotStep, setForgotStep] = useState<"email" | "otp">("email");
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotDone, setForgotDone] = useState(false);
+  const [otpErr, setOtpErr] = useState<string | null>(null);
+  const [otpOk, setOtpOk] = useState(false);
+  const [devOtp, setDevOtp] = useState<string | null>(null);
+  const [otpInfo, setOtpInfo] = useState<string | null>(null);
 
   if (user) {
     setTimeout(() => nav("/available"), 0);
@@ -42,6 +63,52 @@ export function RegisterLandingPage() {
 
   const { register, handleSubmit, formState } = useForm<FormValues>({ resolver: zodResolver(schema) });
   const loginForm = useForm<LoginValues>({ resolver: zodResolver(loginSchema) });
+  const forgotForm = useForm<ForgotValues>({ resolver: zodResolver(forgotSchema) });
+  const otpForm = useForm<OtpResetValues>({ resolver: zodResolver(otpResetSchema) });
+
+  const onForgot = forgotForm.handleSubmit(async (v) => {
+    setForgotErr(null);
+    setOtpInfo(null);
+    try {
+      const res = (await apiFetch("/auth/forgot-password", { method: "POST", body: { email: v.email } })) as { ok: boolean; devOtp?: string };
+      setForgotEmail(v.email);
+      setForgotStep("otp");
+      setOtpErr(null);
+      setOtpOk(false);
+      if (res?.devOtp) {
+        setDevOtp(res.devOtp);
+        console.log("[otp:dev] devOtp for", v.email, res.devOtp);
+      } else {
+        setDevOtp(null);
+      }
+      setOtpInfo("OTP sent. Check server console or dev banner.");
+      setTimeout(() => setOtpInfo(null), 4000);
+    } catch (e) {
+      setForgotErr(toMessage(e));
+    }
+  });
+
+  const onOtpReset = otpForm.handleSubmit(async (v) => {
+    setOtpErr(null);
+    try {
+      await apiFetch("/auth/reset-password", {
+        method: "POST",
+        body: { email: forgotEmail, otp: v.otp, newPassword: v.newPassword },
+      });
+      setOtpOk(true);
+      setForgotDone(true);
+      setTimeout(() => {
+        setMode("login");
+        setForgotStep("email");
+        setForgotDone(false);
+        setOtpOk(false);
+        forgotForm.reset();
+        otpForm.reset();
+      }, 1500);
+    } catch (e) {
+      setOtpErr(toMessage(e));
+    }
+  });
 
   const onLogin = loginForm.handleSubmit(async (v) => {
     setLoginErr(null);
@@ -136,7 +203,16 @@ export function RegisterLandingPage() {
                 <img src="/favicon.svg" alt="BETs" className="w-14 h-14 object-contain" />
                 <p className="mt-1 text-[15px] font-bold tracking-wide text-[var(--bets-primary)]">BETs</p>
               </div>
-              {mode === "register" ? (
+              {mode === "forgot" ? (
+                <div className="mt-5">
+                  <h2 className="text-[16px] font-bold text-[#111]">Forgot password</h2>
+                  <p className="mt-1 text-[12px] text-[var(--bets-text-muted)]">
+                    {forgotStep === "email"
+                      ? "Enter your email. If an account exists, an OTP will be sent. In dev the OTP is logged to the server console."
+                      : `Enter the OTP sent to ${forgotEmail} and set a new password.`}
+                  </p>
+                </div>
+              ) : mode === "register" ? (
                 <p className="mt-5 text-center text-[12px] font-semibold text-[#3a3f47]">
                   Already have an account?{" "}
                   <button type="button" onClick={() => { setMode("login"); setErr(null); }} className="text-[var(--bets-primary)] hover:underline underline-offset-4 font-semibold">
@@ -168,6 +244,65 @@ export function RegisterLandingPage() {
                 <Button type="submit" className="w-full h-10 text-[14px] rounded-[6px] bg-[var(--bets-primary-dark)]">
                   Sign in
                 </Button>
+                <p className="text-xs text-center text-[var(--bets-text-muted)]">
+                  <button type="button" onClick={() => { setMode("forgot"); setLoginErr(null); setForgotStep("email"); setForgotErr(null); setOtpErr(null); setForgotDone(false); setDevOtp(null); setOtpInfo(null); }} className="text-[var(--bets-primary)] hover:underline">Forgot password?</button>
+                </p>
+              </form>
+
+              <form onSubmit={onForgot} className={`mt-5 space-y-4 ${mode === "forgot" && forgotStep === "email" ? "" : "hidden"}`}>
+                <div>
+                  <label className={labelCls}>Email</label>
+                  <Input {...forgotForm.register("email")} placeholder="you@example.com" autoComplete="email" className={inputCls} />
+                  {forgotForm.formState.errors.email && <p className="text-xs text-red-600 mt-1">{forgotForm.formState.errors.email.message}</p>}
+                </div>
+                {forgotErr && <p className="text-[13px] text-red-700 bg-red-50 border border-red-200 px-3 py-2 rounded">{forgotErr}</p>}
+                <Button type="submit" className="w-full h-10 text-[14px] rounded-[6px] bg-[var(--bets-primary-dark)]">Send OTP</Button>
+                <p className="text-xs text-center text-[var(--bets-text-muted)]">
+                  <button type="button" onClick={() => setMode("login")} className="text-[var(--bets-primary)] hover:underline">Back to login</button>
+                </p>
+              </form>
+
+              <form onSubmit={onOtpReset} className={`mt-5 space-y-4 ${mode === "forgot" && forgotStep === "otp" ? "" : "hidden"}`}>
+                {forgotDone && otpOk ? (
+                  <div className="space-y-3">
+                    <p className="text-[13px] text-emerald-800 bg-emerald-50 border border-emerald-200 px-3 py-2 rounded">Password reset — redirecting to login…</p>
+                    <p className="text-xs text-center text-[var(--bets-text-muted)]">
+                      <button type="button" onClick={() => { setMode("login"); setForgotDone(false); setForgotStep("email"); }} className="text-[var(--bets-primary)] hover:underline">Back to login</button>
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    {devOtp && (
+                      <p className="text-[13px] text-amber-800 bg-amber-50 border border-amber-200 px-3 py-2 rounded">Dev OTP: <span className="font-mono font-bold tracking-widest">{devOtp}</span> (also in server console)</p>
+                    )}
+                    {otpInfo && <p className="text-[13px] text-emerald-800 bg-emerald-50 border border-emerald-200 px-3 py-2 rounded">{otpInfo}</p>}
+                    <div>
+                      <label className={labelCls}>OTP</label>
+                      <Input {...otpForm.register("otp")} placeholder="6-digit code" inputMode="numeric" maxLength={6} className={inputCls} />
+                      {otpForm.formState.errors.otp && <p className="text-xs text-red-600 mt-1">{otpForm.formState.errors.otp.message}</p>}
+                    </div>
+                    <div>
+                      <label className={labelCls}>New password</label>
+                      <Input type="password" {...otpForm.register("newPassword")} placeholder="New password" autoComplete="new-password" className={inputCls} />
+                      {otpForm.formState.errors.newPassword && <p className="text-xs text-red-600 mt-1">{otpForm.formState.errors.newPassword.message}</p>}
+                    </div>
+                    <div>
+                      <label className={labelCls}>Confirm password</label>
+                      <Input type="password" {...otpForm.register("confirm")} placeholder="Confirm password" autoComplete="new-password" className={inputCls} />
+                      {otpForm.formState.errors.confirm && <p className="text-xs text-red-600 mt-1">{otpForm.formState.errors.confirm.message}</p>}
+                    </div>
+                    {otpErr && <p className="text-[13px] text-red-700 bg-red-50 border border-red-200 px-3 py-2 rounded">{otpErr}</p>}
+                    <Button type="submit" className="w-full h-10 text-[14px] rounded-[6px] bg-[var(--bets-primary-dark)]">Reset password</Button>
+                    <p className="text-xs text-center text-[var(--bets-text-muted)] flex justify-center gap-2">
+                      <button type="button" onClick={() => { setForgotStep("email"); setOtpErr(null); setOtpInfo(null); }} className="text-[var(--bets-primary)] hover:underline">Change email</button>
+                      <span>·</span>
+                      <button type="button" onClick={() => { setMode("login"); setForgotStep("email"); setDevOtp(null); setOtpInfo(null); }} className="text-[var(--bets-primary)] hover:underline">Back to login</button>
+                    </p>
+                    <p className="text-xs text-center text-[var(--bets-text-muted)]">
+                      <button type="button" onClick={async () => { setOtpErr(null); setOtpInfo(null); try { const r = (await apiFetch("/auth/forgot-password", { method:"POST", body:{ email: forgotEmail }})) as { devOtp?: string }; if (r?.devOtp) setDevOtp(r.devOtp); setOtpInfo("OTP resent. Check banner / server console."); setTimeout(()=>setOtpInfo(null),4000); } catch(e){ setOtpErr(toMessage(e)); } }} className="text-[var(--bets-primary)] hover:underline">Resend OTP</button>
+                    </p>
+                  </>
+                )}
               </form>
 
               <form onSubmit={onSubmit} className={`mt-5 space-y-4 ${mode === "register" ? "" : "hidden"}`}>
