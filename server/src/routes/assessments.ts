@@ -3,108 +3,27 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { getAuthUser, requirePermission } from "../lib/auth";
 import { audit } from "../lib/audit";
-import { parsePagination } from "../lib/pagination";
-import { badRequest, conflict, notFound, unauthenticated, zodDetails } from "../lib/errors";
+import { badRequest, notFound, unauthenticated, zodDetails } from "../lib/errors";
 
 export const assessments = new Hono();
 
-// GET /api/assessments — admin: all, user: published only
+const SINGLETON_ID = "asmt_finance_v1";
+
+// GET /api/assessments — single assessment mode (ignores pagination/filters, always returns singleton if exists)
 assessments.get("/", async (c) => {
   const user = await getAuthUser(c);
   if (!user) return unauthenticated(c);
-
-  const url = new URL(c.req.url);
-  const status = url.searchParams.get("status");
-  const type = url.searchParams.get("type");
-  const { page, pageSize } = parsePagination(url);
-  const isAdmin = user.permissions.includes("assessments.manage");
-
-  const where: Record<string, unknown> = {};
-  if (status) where.status = status;
-  if (type) where.type = type;
-  if (!isAdmin) {
-    // Users see only PUBLISHED
-    where.status = "PUBLISHED";
-  }
-
-  const [total, data] = await Promise.all([
-    prisma.assessment.count({ where: where as never }),
-    prisma.assessment.findMany({
-      where: where as never,
-      orderBy: { createdAt: "desc" },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-      select: { id: true, type: true, status: true, title: true, description: true, openAt: true, closeAt: true, publishedAt: true, createdAt: true, updatedAt: true },
-    }),
-  ]);
-
-  return c.json({ data, page, pageSize, total });
-});
-
-// POST /api/assessments — create draft
-const createAssessmentSchema = z.object({
-  title: z.string().min(1).max(200),
-  description: z.string().max(2000).optional().nullable(),
-  type: z.string().min(1).max(50).optional(),
-  cloneTemplate: z.boolean().optional(),
-});
-
-assessments.post("/", requirePermission("assessments.manage"), async (c) => {
-  const parsed = createAssessmentSchema.safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return badRequest(c, zodDetails(parsed.error));
-  const user = c.get("user");
-  const assessment = await prisma.assessment.create({
-    data: {
-      title: parsed.data.title,
-      description: parsed.data.description ?? null,
-      type: parsed.data.type ?? "FINANCIAL_MATURITY",
-      status: "DRAFT",
-      createdBy: user.id,
-    },
+  const assessment = await prisma.assessment.findUnique({
+    where: { id: SINGLETON_ID },
+    select: { id: true, type: true, status: true, title: true, description: true, openAt: true, closeAt: true, publishedAt: true, createdAt: true, updatedAt: true },
   });
-  if (parsed.data.cloneTemplate) {
-    // Clone from seed finance assessment — one transaction so a failure
-    // never leaves a half-cloned assessment behind.
-    const template = await prisma.assessment.findUnique({
-      where: { id: "asmt_finance_v1" },
-      include: { sections: { include: { categories: true, questions: { include: { options: true } } } } },
-    });
-    if (template) {
-      await prisma.$transaction(async (tx) => {
-        for (const sec of template.sections) {
-          const newSec = await tx.section.create({ data: { assessmentId: assessment.id, order: sec.order, title: sec.title, sourceText: sec.sourceText, description: sec.description } });
-          const catMap = new Map<string, string>();
-          for (const cat of sec.categories) {
-            const newCat = await tx.category.create({ data: { sectionId: newSec.id, order: cat.order, name: cat.name, sourceText: cat.sourceText, description: cat.description } });
-            catMap.set(cat.id, newCat.id);
-          }
-          for (const q of sec.questions) {
-            const newQ = await tx.question.create({
-              data: {
-                assessmentId: assessment.id,
-                sectionId: newSec.id,
-                categoryId: q.categoryId ? catMap.get(q.categoryId) ?? null : null,
-                sourceNumber: q.sourceNumber,
-                type: q.type,
-                promptText: q.promptText,
-                sourceText: q.sourceText,
-                order: q.order,
-                isRequired: q.isRequired,
-                slotCount: q.slotCount,
-                status: q.status,
-                createdBy: user.id,
-              },
-            });
-            for (const opt of q.options) {
-              await tx.questionOption.create({ data: { questionId: newQ.id, order: opt.order, label: opt.label, optionText: opt.optionText, scoreValue: opt.scoreValue } });
-            }
-          }
-        }
-      });
-    }
-  }
-  await audit({ actorId: user.id, action: "assessments.create", entity: "assessment", entityId: assessment.id });
-  return c.json({ assessment }, 201);
+  const data = assessment ? [assessment] : [];
+  return c.json({ data, page: 1, pageSize: 1, total: data.length });
+});
+
+// POST /api/assessments — disabled in single-assessment mode (DB kept)
+assessments.post("/", requirePermission("assessments.manage"), async (c) => {
+  return c.json({ error: "single_assessment_mode", details: "Creation disabled — single assessment only" }, 410);
 });
 
 // GET /api/assessments/:id — detail + tree
@@ -169,75 +88,24 @@ assessments.patch("/:id", requirePermission("assessments.manage"), async (c) => 
   return c.json({ assessment: updated });
 });
 
-// POST /api/assessments/:id/publish — validate completeness → PUBLISHED
+// POST /api/assessments/:id/publish — disabled (single assessment stays PUBLISHED)
 assessments.post("/:id/publish", requirePermission("assessments.manage"), async (c) => {
-  const id = c.req.param("id");
-  const assessment = await prisma.assessment.findUnique({
-    where: { id },
-    include: {
-      sections: { include: { questions: { include: { options: true } } } },
-    },
-  });
-  if (!assessment) return notFound(c);
-  if (assessment.status === "PUBLISHED") return c.json({ assessment });
-  if (assessment.status !== "DRAFT") return conflict(c, "only DRAFT can be published");
-
-  const errors: string[] = [];
-  if (assessment.sections.length === 0) errors.push("at least one section required");
-  const allQuestions = assessment.sections.flatMap((s) => s.questions);
-  const scored = allQuestions.filter((q) => q.type === "SINGLE_SELECT");
-  if (scored.length === 0) errors.push("at least one scored question required");
-  for (const q of scored) {
-    if (q.options.length < 2) errors.push(`question ${q.id} needs at least 2 options`);
-  }
-  if (errors.length) return conflict(c, errors);
-
-  const updated = await prisma.assessment.update({
-    where: { id },
-    data: { status: "PUBLISHED", publishedAt: new Date() },
-  });
-  const user = c.get("user");
-  await audit({ actorId: user.id, action: "assessments.publish", entity: "assessment", entityId: id });
-  return c.json({ assessment: updated });
+  return c.json({ error: "single_assessment_mode", details: "Lifecycle disabled — single assessment only" }, 410);
 });
 
-// POST /api/assessments/:id/close
+// POST /api/assessments/:id/close — disabled
 assessments.post("/:id/close", requirePermission("assessments.manage"), async (c) => {
-  const id = c.req.param("id");
-  const assessment = await prisma.assessment.findUnique({ where: { id } });
-  if (!assessment) return notFound(c);
-  if (assessment.status === "CLOSED") return c.json({ assessment });
-  if (assessment.status !== "PUBLISHED") return conflict(c, "only PUBLISHED can be closed");
-  const updated = await prisma.assessment.update({ where: { id }, data: { status: "CLOSED" } });
-  const user = c.get("user");
-  await audit({ actorId: user.id, action: "assessments.close", entity: "assessment", entityId: id });
-  return c.json({ assessment: updated });
+  return c.json({ error: "single_assessment_mode", details: "Lifecycle disabled — single assessment only" }, 410);
 });
 
-// POST /api/assessments/:id/archive
+// POST /api/assessments/:id/archive — disabled
 assessments.post("/:id/archive", requirePermission("assessments.manage"), async (c) => {
-  const id = c.req.param("id");
-  const assessment = await prisma.assessment.findUnique({ where: { id } });
-  if (!assessment) return notFound(c);
-  if (assessment.status === "ARCHIVED") return c.json({ assessment });
-  const updated = await prisma.assessment.update({ where: { id }, data: { status: "ARCHIVED" } });
-  await audit({ actorId: c.get("user").id, action: "assessments.archive", entity: "assessment", entityId: id });
-  return c.json({ assessment: updated });
+  return c.json({ error: "single_assessment_mode", details: "Lifecycle disabled — single assessment only" }, 410);
 });
 
-// POST /api/assessments/:id/sections — create section
-const createSectionSchema = z.object({ title: z.string().min(1).max(200), order: z.number().int().min(0).optional(), description: z.string().max(2000).optional().nullable() });
+// POST /api/assessments/:id/sections — disabled (structure frozen)
 assessments.post("/:id/sections", requirePermission("assessments.manage"), async (c) => {
-  const id = c.req.param("id");
-  const parsed = createSectionSchema.safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return badRequest(c, zodDetails(parsed.error));
-  const assessment = await prisma.assessment.findUnique({ where: { id } });
-  if (!assessment) return notFound(c);
-  if (assessment.status === "PUBLISHED") return conflict(c, "assessment is PUBLISHED — structure frozen");
-  const count = await prisma.section.count({ where: { assessmentId: id } });
-  const section = await prisma.section.create({ data: { assessmentId: id, title: parsed.data.title, order: parsed.data.order ?? count + 1, description: parsed.data.description ?? null } });
-  await audit({ actorId: c.get("user").id, action: "sections.create", entity: "section", entityId: section.id });
-  return c.json({ section }, 201);
+  return c.json({ error: "single_assessment_mode", details: "Structure frozen — single assessment only" }, 410);
 });
 
 // GET /api/assessments/:id/questions — tree (admin all, user ACTIVE only, strip scores)
@@ -268,16 +136,7 @@ assessments.get("/:id/questions", async (c) => {
   return c.json({ sections: filtered as never });
 });
 
-// POST /api/assessments/sections/:id/categories — create category
+// POST /api/assessments/sections/:id/categories — disabled (structure frozen)
 assessments.post("/sections/:id/categories", requirePermission("assessments.manage"), async (c) => {
-  const sectionId = c.req.param("id");
-  const parsed = z.object({ name: z.string().min(1).max(200), order: z.number().int().min(0).optional(), description: z.string().max(2000).optional().nullable() }).safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return badRequest(c, zodDetails(parsed.error));
-  const section = await prisma.section.findUnique({ where: { id: sectionId }, include: { assessment: true } });
-  if (!section) return notFound(c);
-  if (section.assessment.status === "PUBLISHED") return conflict(c, "assessment is PUBLISHED — structure frozen");
-  const count = await prisma.category.count({ where: { sectionId } });
-  const category = await prisma.category.create({ data: { sectionId, name: parsed.data.name, order: parsed.data.order ?? count + 1, description: parsed.data.description ?? null } });
-  await audit({ actorId: c.get("user").id, action: "categories.create", entity: "category", entityId: category.id });
-  return c.json({ category }, 201);
+  return c.json({ error: "single_assessment_mode", details: "Structure frozen — single assessment only" }, 410);
 });

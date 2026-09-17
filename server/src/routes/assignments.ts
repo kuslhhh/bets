@@ -6,7 +6,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { getAuthUser, requirePermission } from "../lib/auth";
 import { audit } from "../lib/audit";
-import { badRequest, conflict, notFound, unauthenticated, zodDetails } from "../lib/errors";
+import { badRequest, conflict, forbidden, notFound, unauthenticated, zodDetails } from "../lib/errors";
 import { parsePagination } from "../lib/pagination";
 import {
   ServiceError,
@@ -34,6 +34,9 @@ function serviceError(c: import("hono").Context, e: unknown) {
 
 function canRespond(user: { permissions: string[] }): boolean {
   return user.permissions.includes("assignments.self.respond") || user.permissions.includes("assignments.manage");
+}
+function isAdminRole(user: { roleCode: string }): boolean {
+  return user.roleCode === "ADMIN";
 }
 
 // GET /api/my-assessments and GET /api/assignments (list own)
@@ -99,6 +102,7 @@ assignments.get("/assignments/:id", async (c) => {
 assignments.get("/assessments/:id/eligibility", async (c) => {
   const user = await getAuthUser(c);
   if (!user) return unauthenticated(c);
+  if (isAdminRole(user)) return forbidden(c);
   if (!canRespond(user)) return notFound(c);
   const assessmentId = c.req.param("id");
   const assessment = await prisma.assessment.findUnique({ where: { id: assessmentId } });
@@ -117,6 +121,7 @@ assignments.get("/assessments/:id/eligibility", async (c) => {
 assignments.post("/assessments/:id/start", async (c) => {
   const user = await getAuthUser(c);
   if (!user) return unauthenticated(c);
+  if (isAdminRole(user)) return forbidden(c);
   if (!canRespond(user)) return notFound(c);
   const assessmentId = c.req.param("id");
   try {
@@ -132,6 +137,7 @@ assignments.post("/assessments/:id/start", async (c) => {
 assignments.post("/assignments/:id/start", async (c) => {
   const user = await getAuthUser(c);
   if (!user) return unauthenticated(c);
+  if (isAdminRole(user)) return forbidden(c);
   if (!canRespond(user)) return notFound(c);
   const id = c.req.param("id");
   try {
@@ -166,6 +172,7 @@ const responsesSchema = z.object({
 assignments.put("/assignments/:id/responses", async (c) => {
   const user = await getAuthUser(c);
   if (!user) return unauthenticated(c);
+  if (isAdminRole(user)) return forbidden(c);
   const id = c.req.param("id");
   const parsed = responsesSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return badRequest(c, zodDetails(parsed.error));
@@ -186,6 +193,7 @@ assignments.put("/assignments/:id/responses", async (c) => {
 assignments.delete("/assignments/:id/responses", async (c) => {
   const user = await getAuthUser(c);
   if (!user) return unauthenticated(c);
+  if (isAdminRole(user)) return forbidden(c);
   const id = c.req.param("id");
   const assignment = await prisma.assessmentAssignment.findUnique({ where: { id } });
   if (!assignment) return notFound(c);
@@ -203,6 +211,7 @@ assignments.put("/assessments/:id/responses", async (c) => {
   // PUT /assignments/:id/responses to keep save logic single-sourced.
   const user = await getAuthUser(c);
   if (!user) return unauthenticated(c);
+  if (isAdminRole(user)) return forbidden(c);
   const assessmentId = c.req.param("id");
   const parsed = responsesSchema.safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return badRequest(c, zodDetails(parsed.error));
@@ -215,38 +224,16 @@ assignments.put("/assessments/:id/responses", async (c) => {
   }
 });
 
-// POST /api/assessments/:id/assign — optional admin bulk assign
-const assignSchema = z.object({ userIds: z.array(z.string().uuid()).optional(), assignAllActive: z.boolean().optional(), dueAt: z.string().datetime().optional().nullable() });
+// POST /api/assessments/:id/assign — disabled in single-assessment self-serve mode
 assignments.post("/assessments/:id/assign", rateLimit({ windowMs: 60_000, max: 20, keyPrefix: "assign" }), requirePermission("assignments.manage"), async (c) => {
-  const assessmentId = c.req.param("id");
-  const assessment = await prisma.assessment.findUnique({ where: { id: assessmentId } });
-  if (!assessment) return notFound(c);
-  if (assessment.status !== "PUBLISHED") return conflict(c, "assessment not published");
-  const parsed = assignSchema.safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return badRequest(c, zodDetails(parsed.error));
-  let userIds: string[] = parsed.data.userIds ?? [];
-  if (parsed.data.assignAllActive) {
-    const users = await prisma.user.findMany({ where: { isActive: true }, select: { id: true } });
-    userIds = users.map((u) => u.id);
-  }
-  if (userIds.length === 0) return badRequest(c, "userIds required or assignAllActive");
-  let created = 0, skipped = 0;
-  for (const userId of userIds) {
-    const existing = await prisma.assessmentAssignment.findFirst({ where: { assessmentId, userId, status: { in: ["ASSIGNED", "IN_PROGRESS"] } } });
-    if (existing) { skipped++; continue; }
-    const max = await prisma.assessmentAssignment.findMany({ where: { assessmentId, userId }, orderBy: { attempt: "desc" }, take: 1, select: { attempt: true } });
-    const attempt = (max[0]?.attempt ?? 0) + 1;
-    await prisma.assessmentAssignment.create({ data: { assessmentId, userId, status: "ASSIGNED", attempt, dueAt: parsed.data.dueAt ? new Date(parsed.data.dueAt) : null, assignedBy: c.get("user").id } });
-    created++;
-  }
-  await audit({ actorId: c.get("user").id, action: "assignments.bulk_assign", entity: "assessment", entityId: assessmentId, metadata: { created, skipped } });
-  return c.json({ created, skipped });
+  return c.json({ error: "single_assessment_mode", details: "Bulk assign disabled — self-serve single assessment only" }, 410);
 });
 
 // POST /api/assignments/:id/submit — validate → scoring transaction
 assignments.post("/assignments/:id/submit", rateLimit({ windowMs: 60_000, max: 10, keyPrefix: "submit" }), async (c) => {
   const user = await getAuthUser(c);
   if (!user) return unauthenticated(c);
+  if (isAdminRole(user)) return forbidden(c);
   const id = c.req.param("id");
   const assignment = await prisma.assessmentAssignment.findUnique({ where: { id } });
   if (!assignment) return notFound(c);
@@ -286,6 +273,7 @@ assignments.post("/assignments/:id/submit", rateLimit({ windowMs: 60_000, max: 1
 assignments.post("/assessments/:id/submit", async (c) => {
   const user = await getAuthUser(c);
   if (!user) return unauthenticated(c);
+  if (isAdminRole(user)) return forbidden(c);
   const assessmentId = c.req.param("id");
   const assignment = await prisma.assessmentAssignment.findFirst({
     where: { assessmentId, userId: user.id, status: { in: ["ASSIGNED", "IN_PROGRESS"] } },

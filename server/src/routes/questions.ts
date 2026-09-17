@@ -22,72 +22,8 @@ async function hasResponses(questionId: string): Promise<boolean> {
 
 
 
-// POST /api/questions — create question + options
-const createQuestionSchema = z.object({
-  assessmentId: z.string().uuid(),
-  sectionId: z.string().uuid(),
-  categoryId: z.string().uuid().optional().nullable(),
-  type: z.enum(["SINGLE_SELECT", "TEXT_MULTI_SLOT"]),
-  promptText: z.string().min(1).max(5000),
-  order: z.number().int().min(0).optional(),
-  isRequired: z.boolean().optional(),
-  slotCount: z.number().int().min(1).max(10).optional().nullable(),
-  options: z
-    .array(
-      z.object({
-        label: z.string().min(1).max(10),
-        optionText: z.string().min(1).max(2000),
-        scoreValue: z.number().int().refine((v) => [25, 50, 75, 100].includes(v), { message: "score must be 25,50,75,100" }),
-        order: z.number().int().min(0),
-      }),
-    )
-    .optional(),
-});
-
 questions.post("/", requirePermission("questions.manage"), async (c) => {
-  const parsed = createQuestionSchema.safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return badRequest(c, zodDetails(parsed.error));
-
-  const { assessmentId, sectionId, categoryId, type, promptText, order, isRequired, slotCount, options } = parsed.data;
-
-  if (await isPublishedAssessment(assessmentId)) return conflict(c, "assessment is PUBLISHED — structural changes frozen (create new assessment)");
-
-  // Validate section belongs to assessment
-  const section = await prisma.section.findUnique({ where: { id: sectionId } });
-  if (!section || section.assessmentId !== assessmentId) return badRequest(c, "section does not belong to assessment");
-  if (categoryId) {
-    const cat = await prisma.category.findUnique({ where: { id: categoryId } });
-    if (!cat || cat.sectionId !== sectionId) return badRequest(c, "category does not belong to section");
-  }
-
-  if (type === "SINGLE_SELECT") {
-    if (!options || options.length < 2) return badRequest(c, "SINGLE_SELECT requires at least 2 options");
-  }
-  if (type === "TEXT_MULTI_SLOT" && options && options.length > 0) return badRequest(c, "TEXT_MULTI_SLOT must not have options");
-
-  const maxOrder = await prisma.question.count({ where: { assessmentId, sectionId } });
-  const finalOrder = order ?? maxOrder + 1;
-
-  const user = c.get("user");
-  const question = await prisma.question.create({
-    data: {
-      assessmentId,
-      sectionId,
-      categoryId: categoryId ?? null,
-      type,
-      promptText,
-      order: finalOrder,
-      isRequired: isRequired ?? (type === "SINGLE_SELECT"),
-      slotCount: type === "TEXT_MULTI_SLOT" ? (slotCount ?? 4) : null,
-      status: "DRAFT",
-      createdBy: user.id,
-      options: type === "SINGLE_SELECT" && options ? { create: options.map((o) => ({ label: o.label, optionText: o.optionText, scoreValue: o.scoreValue, order: o.order })) } : undefined,
-    },
-    include: { options: true },
-  });
-
-  await audit({ actorId: user.id, action: "questions.create", entity: "question", entityId: question.id });
-  return c.json({ question }, 201);
+  return c.json({ error: "single_assessment_mode", details: "Question creation disabled — single assessment only" }, 410);
 });
 
 // GET /api/questions/:id
